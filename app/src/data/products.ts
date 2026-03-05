@@ -1,0 +1,309 @@
+export interface Product {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  originalPrice?: number;
+  image: string;
+  specs: Record<string, string>;
+  description: string;
+  badge?: string;
+  inStock: boolean;
+}
+
+export const laptops: Product[] = [
+  {
+    id: 'laptop-1',
+    name: '4RM ProBook Ultra',
+    category: 'laptops',
+    price: 1299,
+    originalPrice: 1499,
+    image: '/images/laptop_desk.jpg',
+    specs: {
+      'Processor': 'Intel Core i7-13700H',
+      'RAM': '16GB DDR5',
+      'Storage': '512GB NVMe SSD',
+      'Display': '14" 2.8K OLED 120Hz',
+      'Battery': '14 hours',
+      'Weight': '1.2kg',
+    },
+    description: 'Ultra-portable powerhouse for professionals. All-day battery, stunning OLED display, and zero bloatware.',
+    badge: 'Best Seller',
+    inStock: true,
+  },
+  {
+    id: 'laptop-2',
+    name: '4RM StudioBook Pro',
+    category: 'laptops',
+    price: 2199,
+    image: '/images/laptop_desk.jpg',
+    specs: {
+      'Processor': 'Intel Core i9-13980HX',
+      'RAM': '32GB DDR5',
+      'Storage': '1TB NVMe SSD',
+      'Display': '16" 4K Mini-LED 165Hz',
+      'GPU': 'RTX 4070 8GB',
+      'Weight': '2.1kg',
+    },
+    description: 'Built for creators. Render 4K video, run complex simulations, and multitask without breaking a sweat.',
+    badge: 'New',
+    inStock: true,
+  },
+  {
+    id: 'laptop-3',
+    name: '4RM AirBook Slim',
+    category: 'laptops',
+    price: 899,
+    image: '/images/laptop_desk.jpg',
+    specs: {
+      'Processor': 'AMD Ryzen 5 7530U',
+      'RAM': '8GB DDR4',
+      'Storage': '256GB NVMe SSD',
+      'Display': '13.3" FHD IPS',
+      'Battery': '12 hours',
+      'Weight': '980g',
+    },
+    description: 'Feather-light and budget-friendly. Perfect for students and everyday productivity.',
+    badge: 'Budget Pick',
+    inStock: true,
+  },
+  {
+    id: 'laptop-4',
+    name: '4RM Gaming Beast',
+    category: 'laptops',
+    price: 2899,
+    image: '/images/laptop_desk.jpg',
+    specs: {
+      'Processor': 'AMD Ryzen 9 7945HX',
+      'RAM': '64GB DDR5',
+      'Storage': '2TB NVMe SSD',
+      'Display': '17.3" QHD 240Hz',
+      'GPU': 'RTX 4090 16GB',
+      'Cooling': 'Vapor Chamber',
+    },
+    description: 'Dominate every game. Maximum performance with advanced cooling and per-key RGB.',
+    badge: 'Top Tier',
+    inStock: true,
+  },
+  {
+    id: 'laptop-5',
+    name: '4RM ChromeBook Flex',
+    category: 'laptops',
+    price: 449,
+    image: '/images/laptop_desk.jpg',
+    specs: {
+      'Processor': 'Intel Core i3-1215U',
+      'RAM': '8GB LPDDR4X',
+      'Storage': '128GB eMMC',
+      'Display': '14" FHD Touch 360°',
+      'Battery': '10 hours',
+      'Convertible': 'Yes',
+    },
+    description: '2-in-1 versatility at an unbeatable price. Work, play, and create anywhere.',
+    inStock: true,
+  },
+  {
+    id: 'laptop-6',
+    name: '4RM Business Elite',
+    category: 'laptops',
+    price: 1599,
+    image: '/images/laptop_desk.jpg',
+    specs: {
+      'Processor': 'Intel Core i7-1365U',
+      'RAM': '16GB LPDDR5',
+      'Storage': '512GB NVMe SSD',
+      'Display': '14" FHD+ Anti-glare',
+      'Security': 'TPM 2.0, IR Camera',
+      'LTE': '5G Ready',
+    },
+    description: 'Enterprise-grade security and connectivity. Built for the modern workforce.',
+    inStock: true,
+  },
+];
+
+export const wearables: Product[] = [
+  {
+    id: 'watch-1',
+    name: '4RM Watch Pro',
+    category: 'wearables',
+    price: 349,
+    image: '/images/watch_wrist.jpg',
+    specs: {
+      'Display': '1.9" AMOLED Always-On',
+      'Battery': '72 hours',
+      'Sensors': 'HR, SpO2, ECG, Temp',
+      'Water Resistant': '5ATM',
+      'GPS': 'Dual-band GNSS',
+    },
+    description: 'Your health companion. Advanced sensors, multi-day battery, and seamless connectivity.',
+    badge: 'Best Seller',
+    inStock: true,
+  },
+  {
+    id: 'watch-2',
+    name: '4RM Watch Sport',
+    category: 'wearables',
+    price: 249,
+    image: '/images/watch_wrist.jpg',
+    specs: {
+      'Display': '1.7" AMOLED',
+      'Battery': '48 hours',
+      'Sensors': 'HR, SpO2',
+      'Water Resistant': '5ATM',
+      'GPS': 'Built-in',
+    },
+    description: 'Lightweight and durable. Perfect for workouts and everyday wear.',
+    inStock: true,
+  },
+  {
+    id: 'watch-3',
+    name: '4RM Watch Ultra',
+    category: 'wearables',
+    price: 599,
+    image: '/images/watch_wrist.jpg',
+    specs: {
+      'Display': '2.1" Sapphire AMOLED',
+      'Battery': '7 days',
+      'Sensors': 'HR, SpO2, ECG, BP',
+      'Water Resistant': '10ATM',
+      'Build': 'Titanium Grade 5',
+    },
+    description: 'Adventure-ready. Built for extreme conditions with premium materials.',
+    badge: 'Premium',
+    inStock: true,
+  },
+];
+
+export const audio: Product[] = [
+  {
+    id: 'audio-1',
+    name: '4RM Sonic Pro',
+    category: 'audio',
+    price: 299,
+    image: '/images/headphones_product.jpg',
+    specs: {
+      'Type': 'Over-ear Wireless',
+      'ANC': 'Adaptive 45dB',
+      'Drivers': '40mm Beryllium',
+      'Battery': '40 hours',
+      'Codecs': 'LDAC, aptX HD, AAC',
+    },
+    description: 'Studio-quality sound with industry-leading noise cancellation.',
+    badge: 'Best Seller',
+    inStock: true,
+  },
+  {
+    id: 'audio-2',
+    name: '4RM Buds Air',
+    category: 'audio',
+    price: 149,
+    image: '/images/headphones_product.jpg',
+    specs: {
+      'Type': 'True Wireless',
+      'ANC': 'Hybrid 35dB',
+      'Drivers': '11mm Dynamic',
+      'Battery': '8h + 32h case',
+      'Latency': '60ms Gaming Mode',
+    },
+    description: 'Compact and powerful. Premium sound in a pocketable package.',
+    inStock: true,
+  },
+  {
+    id: 'audio-3',
+    name: '4RM Studio Monitors',
+    category: 'audio',
+    price: 449,
+    image: '/images/headphones_product.jpg',
+    specs: {
+      'Type': 'Over-ear Wired',
+      'Drivers': '50mm Planar Magnetic',
+      'Impedance': '32 Ohm',
+      'Frequency': '5Hz - 50kHz',
+      'Cable': 'Detachable 3m',
+    },
+    description: 'Reference-grade accuracy for producers and audiophiles.',
+    badge: 'Pro Grade',
+    inStock: true,
+  },
+];
+
+export const cameras: Product[] = [
+  {
+    id: 'camera-1',
+    name: '4RM LensMaster X1',
+    category: 'cameras',
+    price: 1899,
+    image: '/images/camera_hand.jpg',
+    specs: {
+      'Sensor': '45MP Full-Frame CMOS',
+      'Video': '8K 30fps / 4K 120fps',
+      'Stabilization': '8-stop IBIS',
+      'AF': '1053-point Dual Pixel',
+      'Storage': 'Dual CFexpress B',
+    },
+    description: 'Professional mirrorless for creators who demand the best.',
+    badge: 'Flagship',
+    inStock: true,
+  },
+  {
+    id: 'camera-2',
+    name: '4RM Compact Pro',
+    category: 'cameras',
+    price: 899,
+    image: '/images/camera_hand.jpg',
+    specs: {
+      'Sensor': '24MP APS-C',
+      'Video': '4K 60fps',
+      'Lens': '18-55mm f/2.8-4',
+      'Stabilization': '5-axis',
+      'Weight': '380g',
+    },
+    description: 'Big performance in a compact body. Perfect for travel and vlogging.',
+    inStock: true,
+  },
+];
+
+export const consoles: Product[] = [
+  {
+    id: 'console-1',
+    name: '4RM PlayBox X',
+    category: 'consoles',
+    price: 499,
+    image: '/images/console_handheld.jpg',
+    specs: {
+      'Processor': 'Custom 8-core Zen 2',
+      'GPU': '12 TFLOPS RDNA 2',
+      'Storage': '1TB NVMe SSD',
+      'Resolution': '4K 120fps',
+      'Ray Tracing': 'Hardware',
+    },
+    description: 'Next-gen gaming performance. Lightning-fast load times, stunning visuals.',
+    badge: 'New',
+    inStock: true,
+  },
+  {
+    id: 'console-2',
+    name: '4RM Handheld Go',
+    category: 'consoles',
+    price: 349,
+    image: '/images/console_handheld.jpg',
+    specs: {
+      'Display': '7" OLED 120Hz',
+      'Processor': 'Custom 6-core',
+      'Storage': '512GB',
+      'Battery': '6-8 hours',
+      'Cloud Gaming': 'Supported',
+    },
+    description: 'Console-quality gaming anywhere. Your library travels with you.',
+    badge: 'Portable',
+    inStock: true,
+  },
+];
+
+export const allProducts = [
+  ...laptops,
+  ...wearables,
+  ...audio,
+  ...cameras,
+  ...consoles,
+];
