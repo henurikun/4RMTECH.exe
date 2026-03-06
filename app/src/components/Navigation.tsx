@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, X, ShoppingCart, Cpu, Search } from 'lucide-react';
+import { useCart } from '../context/CartContext';
 
 export default function Navigation() {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -10,6 +11,7 @@ export default function Navigation() {
   const navRef = useRef<HTMLElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
+  const { totalItems } = useCart();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -154,10 +156,14 @@ export default function Navigation() {
               </form>
             )}
 
-            <button className="hidden md:flex items-center gap-2 text-sm text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors">
+            <Link
+              to="/cart"
+              className="hidden md:flex items-center gap-2 text-sm text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors"
+              aria-label="Open cart"
+            >
               <ShoppingCart className="w-4 h-4" />
-              <span className="font-mono text-xs">(0)</span>
-            </button>
+              <span className="font-mono text-xs">({totalItems})</span>
+            </Link>
 
             {/* Mobile menu button */}
             <button
@@ -243,10 +249,10 @@ export default function Navigation() {
             Support
           </button>
           
-          <button className="flex items-center gap-3 mt-8 text-[#A8ACB8]">
+          <Link to="/cart" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 mt-8 text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors">
             <ShoppingCart className="w-5 h-5" />
-            <span className="font-mono text-sm">Cart (0)</span>
-          </button>
+            <span className="font-mono text-sm">Cart ({totalItems})</span>
+          </Link>
         </div>
       </div>
     </>

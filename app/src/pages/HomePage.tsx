@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import HeroSection from '../sections/HeroSection';
@@ -7,6 +8,7 @@ import ProductSection from '../sections/ProductSection';
 import MembershipSection from '../sections/MembershipSection';
 import RepairSection from '../sections/RepairSection';
 import FinalCTASection from '../sections/FinalCTASection';
+import { ADMIN_EMAIL, ADMIN_PASSWORD } from '../config/adminAuth';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -76,6 +78,11 @@ const products: Product[] = [
 
 export default function HomePage() {
   const mainRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminError, setAdminError] = useState('');
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -123,6 +130,25 @@ export default function HomePage() {
     };
   }, []);
 
+  const handleAdminLogin = (event: React.FormEvent) => {
+    event.preventDefault();
+    const emailOk = adminEmail.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    const passwordOk = adminPassword === ADMIN_PASSWORD;
+    if (!emailOk || !passwordOk) {
+      setAdminError('Invalid admin credentials.');
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('4rmtech_admin', 'true');
+    }
+
+    setAdminError('');
+    setShowAdminLogin(false);
+    setAdminPassword('');
+    navigate('/admin');
+  };
+
   return (
     <div ref={mainRef} className="relative bg-[#0B0C0F]">
       {/* Grain overlay */}
@@ -160,6 +186,81 @@ export default function HomePage() {
       
       {/* Final CTA Section */}
       <FinalCTASection />
+      {/* Subtle admin login dot in footer */}
+      <button
+        type="button"
+        onClick={() => {
+          setShowAdminLogin(true);
+          setAdminError('');
+        }}
+        aria-label="Admin login"
+        className="fixed bottom-4 right-6 w-2 h-2 rounded-full bg-[#D7FF3B]/70 hover:bg-[#D7FF3B] transition-colors shadow-sm"
+      />
+
+      {showAdminLogin && (
+        <div className="fixed inset-0 z-50 flex items-end justify-end pointer-events-none">
+          <div className="pointer-events-auto m-4 w-full max-w-xs rounded-2xl bg-[#050609]/95 border border-white/10 p-4 shadow-xl">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-medium text-[#F4F6FA]">Admin Login</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAdminLogin(false);
+                  setAdminPassword('');
+                  setAdminError('');
+                }}
+                className="w-6 h-6 rounded-full bg-white/5 hover:bg-white/10 text-[#F4F6FA] flex items-center justify-center text-xs"
+                aria-label="Close admin login"
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleAdminLogin} className="space-y-2">
+              <div className="space-y-1">
+                <label
+                  htmlFor="home-admin-email"
+                  className="text-[11px] font-medium text-[#A8ACB8]"
+                >
+                  Email
+                </label>
+                <input
+                  id="home-admin-email"
+                  type="email"
+                  value={adminEmail}
+                  onChange={e => setAdminEmail(e.target.value)}
+                  autoComplete="off"
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-[#F4F6FA] focus:outline-none focus:border-[#D7FF3B]"
+                />
+              </div>
+              <div className="space-y-1">
+                <label
+                  htmlFor="home-admin-password"
+                  className="text-[11px] font-medium text-[#A8ACB8]"
+                >
+                  Password
+                </label>
+                <input
+                  id="home-admin-password"
+                  type="password"
+                  value={adminPassword}
+                  onChange={e => setAdminPassword(e.target.value)}
+                  autoComplete="off"
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-[#F4F6FA] focus:outline-none focus:border-[#D7FF3B]"
+                />
+              </div>
+              {adminError && (
+                <p className="text-[11px] text-red-400">{adminError}</p>
+              )}
+              <button
+                type="submit"
+                className="w-full mt-1 px-3 py-2 rounded-full bg-[#D7FF3B] text-[#0B0C0F] text-xs font-semibold hover:bg-[#e0ff5c] transition-colors"
+              >
+                Enter
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

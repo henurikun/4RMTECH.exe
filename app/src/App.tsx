@@ -6,6 +6,9 @@ import Navigation from './components/Navigation';
 import HomePage from './pages/HomePage';
 import ProductListingPage from './pages/ProductListingPage';
 import PCBuilderPage from './pages/PCBuilderPage';
+import AdminPage from './pages/AdminPage';
+import CartPage from './pages/CartPage';
+import CheckoutPage from './pages/CheckoutPage';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -35,6 +38,9 @@ function App() {
           <Route path="/" element={<><Navigation /><HomePage /></>} />
           <Route path="/category/:category" element={<ProductListingPage />} />
           <Route path="/pc-builder" element={<PCBuilderPage />} />
+          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/cart" element={<CartPage />} />
+          <Route path="/checkout" element={<CheckoutPage />} />
         </Routes>
       </div>
     </BrowserRouter>

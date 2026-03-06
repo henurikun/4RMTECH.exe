@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Filter, ShoppingCart, Check, Star } from 'lucide-react';
 import { allProducts, type Product } from '../data/products';
+import { useCart } from '../context/CartContext';
 
 const categoryNames: Record<string, string> = {
   laptops: 'Laptops',
@@ -17,7 +18,7 @@ export default function ProductListingPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [filter, setFilter] = useState<'all' | 'budget' | 'premium'>('all');
   const [sort, setSort] = useState<'price-low' | 'price-high' | 'featured'>('featured');
-  const [cart, setCart] = useState<string[]>([]);
+  const { addItem, totalItems, items } = useCart();
 
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat('en-PH', {
@@ -64,9 +65,7 @@ export default function ProductListingPage() {
     }
   }, [category, filter, sort, searchParams]);
 
-  const addToCart = (productId: string) => {
-    setCart([...cart, productId]);
-  };
+  const isInCart = (productId: string) => items.some((i) => i.productId === productId);
 
   return (
     <div className="min-h-screen bg-[#0B0C0F]">
@@ -88,7 +87,7 @@ export default function ProductListingPage() {
           
           <Link to="/cart" className="flex items-center gap-2 text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors">
             <ShoppingCart className="w-5 h-5" />
-            <span className="font-mono text-sm">({cart.length})</span>
+            <span className="font-mono text-sm">({totalItems})</span>
           </Link>
         </div>
       </header>
@@ -203,15 +202,15 @@ export default function ProductListingPage() {
                     </div>
                     
                     <button
-                      onClick={() => addToCart(product.id)}
-                      disabled={cart.includes(product.id)}
+                      onClick={() => addItem(product.id, 1)}
+                      disabled={isInCart(product.id)}
                       className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-colors ${
-                        cart.includes(product.id)
+                        isInCart(product.id)
                           ? 'bg-green-500/20 text-green-400 cursor-default'
                           : 'bg-[#D7FF3B] text-[#0B0C0F] hover:bg-[#e0ff5c]'
                       }`}
                     >
-                      {cart.includes(product.id) ? (
+                      {isInCart(product.id) ? (
                         <>
                           <Check className="w-4 h-4" />
                           Added

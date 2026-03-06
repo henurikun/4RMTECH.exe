@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { ArrowRight } from 'lucide-react';
-
+//hi
 gsap.registerPlugin(ScrollTrigger);
 
 export default function HeroSection() {

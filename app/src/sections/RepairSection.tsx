@@ -1,9 +1,50 @@
 import { useRef, useLayoutEffect, useState } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { Monitor, Battery, Droplets, HardDrive, ArrowRight } from 'lucide-react';
+import { Monitor, Battery, Droplets, HardDrive, ArrowRight, CheckCircle } from 'lucide-react';
 
 gsap.registerPlugin(ScrollTrigger);
+
+const REPAIRS_STORAGE_KEY = '4rmtech_repairs';
+const REPAIR_RESPONSES_STORAGE_KEY = '4rmtech_repair_responses';
+
+export interface RepairRequest {
+  id: string;
+  name: string;
+  device: string;
+  issue: string;
+  contact: string;
+  createdAt: number;
+}
+
+interface RepairResponse {
+  repairId: string;
+  status: string;
+  message: string;
+  updatedAt: number;
+}
+
+function saveRepairRequest(request: RepairRequest) {
+  try {
+    const raw = window.localStorage.getItem(REPAIRS_STORAGE_KEY);
+    const list: RepairRequest[] = raw ? JSON.parse(raw) : [];
+    list.unshift(request);
+    window.localStorage.setItem(REPAIRS_STORAGE_KEY, JSON.stringify(list));
+  } catch {
+    // ignore
+  }
+}
+
+function getRepairResponse(repairId: string): RepairResponse | null {
+  try {
+    const raw = window.localStorage.getItem(REPAIR_RESPONSES_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, RepairResponse>) : {};
+    const res = parsed?.[repairId];
+    return res ?? null;
+  } catch {
+    return null;
+  }
+}
 
 const services = [
   {
@@ -36,10 +77,18 @@ export default function RepairSection() {
   const cardRef = useRef<HTMLDivElement>(null);
 
   const [formData, setFormData] = useState({
+    name: '',
     device: '',
     issue: '',
     contact: '',
   });
+  const [submittedRef, setSubmittedRef] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState('');
+  const [lookupRef, setLookupRef] = useState('');
+  const [lookupResult, setLookupResult] = useState<RepairResponse | null>(null);
+  const [lookupError, setLookupError] = useState('');
+
+  const submittedResponse = submittedRef ? getRepairResponse(submittedRef) : null;
 
   useLayoutEffect(() => {
     const ctx = gsap.context(() => {
@@ -122,7 +171,50 @@ export default function RepairSection() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    alert('Quote request submitted! We will contact you soon.');
+    setSubmitError('');
+    const name = formData.name.trim();
+    const device = formData.device.trim();
+    const issue = formData.issue.trim();
+    const contact = formData.contact.trim();
+    if (!name || !device || !issue || !contact) {
+      setSubmitError('Please fill in all fields.');
+      return;
+    }
+    const id = `REP-${Date.now()}`;
+    const request: RepairRequest = {
+      id,
+      name,
+      device,
+      issue,
+      contact,
+      createdAt: Date.now(),
+    };
+    saveRepairRequest(request);
+    setSubmittedRef(id);
+    setFormData({ name: '', device: '', issue: '', contact: '' });
+  };
+
+  const resetForm = () => {
+    setSubmittedRef(null);
+    setSubmitError('');
+  };
+
+  const handleLookup = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLookupError('');
+    const ref = lookupRef.trim();
+    if (!ref) {
+      setLookupError('Enter your repair reference.');
+      setLookupResult(null);
+      return;
+    }
+    const res = getRepairResponse(ref);
+    if (!res) {
+      setLookupError('No admin response yet. Please check again later.');
+      setLookupResult(null);
+      return;
+    }
+    setLookupResult(res);
   };
 
   return (
@@ -182,18 +274,75 @@ export default function RepairSection() {
             ref={cardRef}
             className="bg-[#0B0C0F] border-2 border-[#D7FF3B] rounded-[18px] p-6 lg:p-8"
           >
-            <h3 className="font-['Space_Grotesk'] text-2xl font-semibold text-[#F4F6FA] mb-6">
-              Book a repair
-            </h3>
-
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div>
-                <label
-                  htmlFor="device"
-                  className="block font-mono text-xs uppercase tracking-[0.12em] text-[#A8ACB8] mb-2"
+            {submittedRef ? (
+              <div className="text-center py-4">
+                <div className="inline-flex w-14 h-14 rounded-full bg-[#D7FF3B]/20 items-center justify-center mb-4">
+                  <CheckCircle className="w-8 h-8 text-[#D7FF3B]" />
+                </div>
+                <h3 className="font-['Space_Grotesk'] text-xl font-semibold text-[#F4F6FA] mb-2">
+                  Request received
+                </h3>
+                <p className="text-[#A8ACB8] text-sm mb-4">
+                  We&apos;ll contact you soon with a quote. Keep this reference for your records.
+                </p>
+                <p className="font-mono text-lg font-bold text-[#D7FF3B] mb-6">
+                  {submittedRef}
+                </p>
+                {submittedResponse ? (
+                  <div className="mt-4 text-left rounded-2xl bg-white/5 border border-white/10 p-4">
+                    <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#A8ACB8] mb-2">
+                      Admin response • {submittedResponse.status}
+                    </p>
+                    <p className="text-sm text-[#F4F6FA] whitespace-pre-wrap">
+                      {submittedResponse.message || '—'}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-[#6B7280] mb-6">
+                    No admin response yet. You can check status below anytime.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="text-sm text-[#A8ACB8] hover:text-[#F4F6FA] underline underline-offset-4"
                 >
-                  Device Type
-                </label>
+                  Book another repair
+                </button>
+              </div>
+            ) : (
+              <>
+                <h3 className="font-['Space_Grotesk'] text-2xl font-semibold text-[#F4F6FA] mb-6">
+                  Book a repair
+                </h3>
+
+                <form onSubmit={handleSubmit} className="space-y-5">
+                  <div>
+                    <label
+                      htmlFor="repair-name"
+                      className="block font-mono text-xs uppercase tracking-[0.12em] text-[#A8ACB8] mb-2"
+                    >
+                      Your name
+                    </label>
+                    <input
+                      type="text"
+                      id="repair-name"
+                      value={formData.name}
+                      onChange={(e) =>
+                        setFormData({ ...formData, name: e.target.value })
+                      }
+                      placeholder="Full name"
+                      className="w-full px-4 py-3 bg-[#1a1c22] border border-[#2a2d35] rounded-xl text-[#F4F6FA] placeholder:text-[#5a5d65] focus:border-[#D7FF3B] focus:outline-none transition-colors"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="device"
+                      className="block font-mono text-xs uppercase tracking-[0.12em] text-[#A8ACB8] mb-2"
+                    >
+                      Device Type
+                    </label>
                 <select
                   aria-label="Device type"
                   title="Device type"
@@ -244,14 +393,51 @@ export default function RepairSection() {
                 />
               </div>
 
-              <button
-                type="submit"
-                className="group w-full flex items-center justify-center gap-2 px-6 py-4 bg-[#D7FF3B] text-[#0B0C0F] font-medium rounded-full hover:bg-[#e0ff5c] transition-colors mt-2"
-              >
-                Get a quote
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </button>
-            </form>
+                  {submitError && (
+                    <p className="text-sm text-red-400">{submitError}</p>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="group w-full flex items-center justify-center gap-2 px-6 py-4 bg-[#D7FF3B] text-[#0B0C0F] font-medium rounded-full hover:bg-[#e0ff5c] transition-colors mt-2"
+                  >
+                    Get a quote
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  </button>
+                </form>
+
+                <div className="mt-8 pt-6 border-t border-white/10">
+                  <p className="text-xs font-mono uppercase tracking-[0.12em] text-[#A8ACB8] mb-3">
+                    Check repair status
+                  </p>
+                  <form onSubmit={handleLookup} className="space-y-3">
+                    <input
+                      value={lookupRef}
+                      onChange={(e) => setLookupRef(e.target.value)}
+                      placeholder="Enter reference (e.g. REP-1234567890)"
+                      className="w-full px-4 py-3 bg-[#1a1c22] border border-[#2a2d35] rounded-xl text-[#F4F6FA] placeholder:text-[#5a5d65] focus:border-[#D7FF3B] focus:outline-none transition-colors"
+                    />
+                    {lookupError && <p className="text-sm text-[#A8ACB8]">{lookupError}</p>}
+                    {lookupResult && (
+                      <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
+                        <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#A8ACB8] mb-2">
+                          Status • {lookupResult.status}
+                        </p>
+                        <p className="text-sm text-[#F4F6FA] whitespace-pre-wrap">
+                          {lookupResult.message || '—'}
+                        </p>
+                      </div>
+                    )}
+                    <button
+                      type="submit"
+                      className="w-full px-6 py-3 rounded-full bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA] transition-colors"
+                    >
+                      Check status
+                    </button>
+                  </form>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

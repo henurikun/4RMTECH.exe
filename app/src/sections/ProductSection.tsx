@@ -197,7 +197,7 @@ export default function ProductSection({
         <div
           ref={ruleRef}
           className={`absolute ${
-            isImageLeft ? 'left-[8vw] top-[18vh]' : 'left-[8vw] top-[46vh]'
+            isImageLeft ? 'left-[8vw] top-[18vh]' : 'left-[4vw] top-[42vh]'
           } ${isImageLeft ? 'w-[2px] h-[28vh]' : 'w-[28vw] h-[2px]'} bg-[#D7FF3B]/70`}
         />
 
