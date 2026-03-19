@@ -148,7 +148,7 @@ export default function FinalCTASection() {
 
           <div ref={ctaRef} className="flex flex-wrap items-center justify-center gap-4">
             <Link 
-              to="/category/laptops"
+              to="/category/all"
               className="group flex items-center gap-2 px-8 py-4 bg-[#FFD700] text-[#070A15] font-medium rounded-full hover:bg-[#ffe44d] transition-colors"
             >
               Start shopping

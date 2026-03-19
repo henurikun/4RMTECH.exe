@@ -193,10 +193,10 @@ export default function HeroSection() {
         {/* CTA buttons */}
         <div ref={ctaRef} className="flex flex-wrap items-center gap-4">
           <Link 
-            to="/category/devices"
+            to="/category/all"
             className="group flex items-center gap-2 px-6 py-3 bg-[#FFD700] text-[#070A15] font-medium rounded-full hover:bg-[#ffe44d] transition-colors"
           >
-            Shop devices
+            Browse
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </Link>
           <button 
