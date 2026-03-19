@@ -130,13 +130,13 @@ export default function MembershipSection() {
   return (
     <section
       ref={sectionRef}
-      className="relative w-full bg-[#6E2B88] py-24 lg:py-32"
+      className="relative w-full bg-[#1E3A8A] py-24 lg:py-32"
       id="membership"
     >
       {/* Decorative lime lines */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[20%] left-[10%] w-[40vw] h-[2px] bg-[#D7FF3B]/10 rotate-12" />
-        <div className="absolute top-[60%] right-[5%] w-[30vw] h-[2px] bg-[#D7FF3B]/10 -rotate-6" />
+        <div className="absolute top-[20%] left-[10%] w-[40vw] h-[2px] bg-[#FFD700]/12 rotate-12" />
+        <div className="absolute top-[60%] right-[5%] w-[30vw] h-[2px] bg-[#FFD700]/12 -rotate-6" />
       </div>
 
       <div className="relative px-8 lg:px-[8vw]">
@@ -163,9 +163,9 @@ export default function MembershipSection() {
             <div
               key={perk.title}
               ref={(el) => { cardsRef.current[i] = el; }}
-              className="bg-[#0B0C0F] rounded-[18px] p-6 lg:p-8 border-t-2 border-[#D7FF3B]"
+              className="bg-[#070A15]/80 backdrop-blur rounded-[18px] p-6 lg:p-8 border-t-2 border-[#FFD700]"
             >
-              <perk.icon className="w-8 h-8 text-[#D7FF3B] mb-4" />
+              <perk.icon className="w-8 h-8 text-[#FFD700] mb-4" />
               <h3 className="font-['Space_Grotesk'] text-xl font-semibold text-[#F4F6FA] mb-2">
                 {perk.title}
               </h3>
@@ -180,7 +180,7 @@ export default function MembershipSection() {
         <div className="relative">
           <div
             ref={lineRef}
-            className="absolute -left-4 top-0 w-1 h-full bg-[#D7FF3B] origin-top"
+            className="absolute -left-4 top-0 w-1 h-full bg-[#FFD700] origin-top"
           />
           <div ref={quoteRef} className="pl-8">
             <blockquote className="font-['Space_Grotesk'] text-xl lg:text-2xl text-[#F4F6FA] leading-relaxed mb-4 max-w-[52vw]">

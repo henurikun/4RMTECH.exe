@@ -66,7 +66,7 @@ export default function Navigation() {
         ref={navRef}
         className={`fixed top-0 left-0 right-0 z-[100] transition-all duration-500 ${
           isScrolled
-            ? 'bg-[#0B0C0F]/90 backdrop-blur-md border-b border-white/5'
+            ? 'bg-[#070A15]/85 backdrop-blur-md border-b border-white/10'
             : 'bg-transparent'
         }`}
       >
@@ -144,12 +144,12 @@ export default function Navigation() {
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search products..."
                     aria-label="Search products"
-                    className="w-[280px] xl:w-[340px] pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-full text-sm text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#D7FF3B]"
+                    className="w-[280px] xl:w-[340px] pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-full text-sm text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700]"
                   />
                 </div>
                 <button
                   type="submit"
-                  className="px-4 py-2.5 rounded-full bg-[#D7FF3B] text-[#0B0C0F] text-sm font-medium hover:bg-[#e0ff5c] transition-colors"
+                  className="px-4 py-2.5 rounded-full bg-[#FFD700] text-[#070A15] text-sm font-medium hover:bg-[#ffe44d] transition-colors"
                 >
                   Search
                 </button>
@@ -178,7 +178,7 @@ export default function Navigation() {
 
       {/* Mobile menu */}
       <div
-        className={`fixed inset-0 z-[99] bg-[#0B0C0F]/98 backdrop-blur-lg transition-all duration-500 ${
+        className={`fixed inset-0 z-[99] bg-[#070A15]/96 backdrop-blur-lg transition-all duration-500 ${
           isMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
       >
@@ -200,12 +200,12 @@ export default function Navigation() {
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search products..."
                 aria-label="Search products"
-                className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-full text-base text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#D7FF3B]"
+                className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-full text-base text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700]"
               />
             </div>
             <button
               type="submit"
-              className="mt-3 w-full px-6 py-3 rounded-full bg-[#D7FF3B] text-[#0B0C0F] text-base font-semibold hover:bg-[#e0ff5c] transition-colors"
+              className="mt-3 w-full px-6 py-3 rounded-full bg-[#FFD700] text-[#070A15] text-base font-semibold hover:bg-[#ffe44d] transition-colors"
             >
               Search
             </button>
@@ -219,7 +219,7 @@ export default function Navigation() {
               key={cat.id}
               to={cat.path}
               onClick={() => setIsMenuOpen(false)}
-              className="text-2xl font-['Space_Grotesk'] font-semibold text-[#F4F6FA] hover:text-[#D7FF3B] transition-colors"
+              className="text-2xl font-['Space_Grotesk'] font-semibold text-[#F4F6FA] hover:text-[#FFD700] transition-colors"
             >
               {cat.name}
             </Link>
@@ -230,7 +230,7 @@ export default function Navigation() {
           <Link
             to="/pc-builder"
             onClick={() => setIsMenuOpen(false)}
-            className="flex items-center gap-2 text-2xl font-['Space_Grotesk'] font-semibold text-[#D7FF3B] hover:text-[#e0ff5c] transition-colors"
+            className="flex items-center gap-2 text-2xl font-['Space_Grotesk'] font-semibold text-[#FFD700] hover:text-[#ffe44d] transition-colors"
           >
             <Cpu className="w-6 h-6" />
             PC Builder
@@ -238,13 +238,13 @@ export default function Navigation() {
           
           <button
             onClick={() => scrollToSection('repair')}
-            className="text-2xl font-['Space_Grotesk'] font-semibold text-[#F4F6FA] hover:text-[#D7FF3B] transition-colors"
+            className="text-2xl font-['Space_Grotesk'] font-semibold text-[#F4F6FA] hover:text-[#FFD700] transition-colors"
           >
             Repairs
           </button>
           <button
             onClick={() => scrollToSection('membership')}
-            className="text-2xl font-['Space_Grotesk'] font-semibold text-[#F4F6FA] hover:text-[#D7FF3B] transition-colors"
+            className="text-2xl font-['Space_Grotesk'] font-semibold text-[#F4F6FA] hover:text-[#FFD700] transition-colors"
           >
             Support
           </button>

@@ -276,7 +276,7 @@ export default function AdminPage() {
 
   if (!isAuthed) {
     return (
-      <div className="min-h-screen bg-[#0B0C0F] relative">
+      <div className="min-h-screen relative">
         <div className="flex items-center justify-center h-screen px-6">
           <div className="max-w-md text-center">
             <p className="font-mono text-xs uppercase tracking-[0.18em] text-[#A8ACB8] mb-3">
@@ -296,12 +296,12 @@ export default function AdminPage() {
           type="button"
           onClick={() => setShowLogin(true)}
           aria-label="Admin login"
-          className="fixed bottom-4 right-6 w-2 h-2 rounded-full bg-[#D7FF3B]/70 hover:bg-[#D7FF3B] transition-colors shadow-sm"
+          className="fixed bottom-4 right-6 w-2 h-2 rounded-full bg-[#FFD700]/70 hover:bg-[#FFD700] transition-colors shadow-sm"
         />
 
         {showLogin && (
           <div className="fixed inset-0 z-50 flex items-end justify-end pointer-events-none">
-            <div className="pointer-events-auto m-4 w-full max-w-xs rounded-2xl bg-[#050609]/95 border border-white/10 p-4 shadow-xl">
+            <div className="pointer-events-auto m-4 w-full max-w-xs rounded-2xl bg-[#070A15]/95 border border-white/10 p-4 shadow-xl">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-medium text-[#F4F6FA]">Admin Login</p>
                 <button
@@ -331,7 +331,7 @@ export default function AdminPage() {
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     autoComplete="off"
-                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-[#F4F6FA] focus:outline-none focus:border-[#D7FF3B]"
+                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
                   />
                 </div>
                 {loginError && (
@@ -339,7 +339,7 @@ export default function AdminPage() {
                 )}
                 <button
                   type="submit"
-                  className="w-full mt-1 px-3 py-2 rounded-full bg-[#D7FF3B] text-[#0B0C0F] text-xs font-semibold hover:bg-[#e0ff5c] transition-colors"
+                  className="w-full mt-1 px-3 py-2 rounded-full bg-[#FFD700] text-[#070A15] text-xs font-semibold hover:bg-[#ffe44d] transition-colors"
                 >
                   Enter
                 </button>
@@ -352,9 +352,9 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C0F]">
+    <div className="min-h-screen">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-[#0B0C0F]/95 backdrop-blur-md border-b border-white/5">
+      <header className="sticky top-0 z-40 bg-[#070A15]/85 backdrop-blur-md border-b border-white/10">
         <div className="flex flex-wrap items-center justify-between gap-4 px-6 lg:px-12 py-4">
           <div className="flex items-center gap-4">
             <Link
@@ -366,7 +366,7 @@ export default function AdminPage() {
             </Link>
             <div className="h-4 w-px bg-white/10" />
             <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-full bg-[#D7FF3B]/10 flex items-center justify-center text-[#D7FF3B] font-bold text-sm">
+              <div className="h-9 w-9 rounded-full bg-[#FFD700]/10 flex items-center justify-center text-[#FFD700] font-bold text-sm">
                 ADM
               </div>
               <div>
@@ -386,7 +386,7 @@ export default function AdminPage() {
               onClick={() => setPanel('products')}
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                 panel === 'products'
-                  ? 'bg-[#D7FF3B] text-[#0B0C0F]'
+                  ? 'bg-[#FFD700] text-[#070A15]'
                   : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
               }`}
             >
@@ -398,7 +398,7 @@ export default function AdminPage() {
               onClick={() => setPanel('repairs')}
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                 panel === 'repairs'
-                  ? 'bg-[#D7FF3B] text-[#0B0C0F]'
+                  ? 'bg-[#FFD700] text-[#070A15]'
                   : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
               }`}
             >
@@ -409,7 +409,7 @@ export default function AdminPage() {
             {panel === 'products' && (
               <button
                 onClick={startAdd}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#D7FF3B] text-[#0B0C0F] text-sm font-semibold hover:bg-[#e0ff5c] transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FFD700] text-[#070A15] text-sm font-semibold hover:bg-[#ffe44d] transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 Add Product
@@ -437,7 +437,7 @@ export default function AdminPage() {
                       onClick={() => setMode(cat)}
                       className={`px-4 py-1.5 rounded-full text-xs font-medium transition-colors ${
                         mode === cat
-                          ? 'bg-[#D7FF3B] text-[#0B0C0F]'
+                          ? 'bg-[#FFD700] text-[#070A15]'
                           : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
                       }`}
                     >
@@ -460,7 +460,7 @@ export default function AdminPage() {
                 {filteredProducts.map(product => (
                   <div
                     key={product.id}
-                    className="group bg-[#111318] rounded-2xl overflow-hidden border border-white/5 hover:border-[#D7FF3B]/30 transition-all duration-300"
+                    className="group bg-[#111318] rounded-2xl overflow-hidden border border-white/5 hover:border-[#FFD700]/30 transition-all duration-300"
                   >
                     {/* Image */}
                     <div className="relative aspect-[4/3] overflow-hidden">
@@ -470,7 +470,7 @@ export default function AdminPage() {
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
                       {product.badge && (
-                        <div className="absolute top-4 left-4 px-3 py-1 bg-[#D7FF3B] text-[#0B0C0F] text-xs font-bold rounded-full">
+                        <div className="absolute top-4 left-4 px-3 py-1 bg-[#FFD700] text-[#070A15] text-xs font-bold rounded-full">
                           {product.badge}
                         </div>
                       )}
@@ -502,7 +502,7 @@ export default function AdminPage() {
 
                       <div className="flex items-center justify-between pt-3 border-t border-white/5">
                         <div>
-                          <span className="font-['Space_Grotesk'] text-xl font-bold text-[#D7FF3B]">
+                          <span className="font-['Space_Grotesk'] text-xl font-bold text-[#FFD700]">
                             ₱{product.price.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
                           </span>
                           {product.originalPrice && (
@@ -551,7 +551,7 @@ export default function AdminPage() {
               setEditingId(null);
             }}
           />
-          <div className="w-full max-w-md bg-[#0B0C0F] border-l border-white/10 shadow-2xl p-6 overflow-y-auto">
+          <div className="w-full max-w-md bg-[#070A15]/95 border-l border-white/10 shadow-2xl p-6 overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA]">
@@ -584,7 +584,7 @@ export default function AdminPage() {
                   value={formState.name}
                   onChange={e => handleChange('name', e.target.value)}
                   required
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#D7FF3B]"
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
                 />
               </div>
 
@@ -597,7 +597,7 @@ export default function AdminPage() {
                     id="admin-category"
                     value={formState.category}
                     onChange={e => handleChange('category', e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#D7FF3B]"
+                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
                   >
                     {(['laptops', 'wearables', 'audio', 'cameras', 'consoles', 'devices'] as const).map(
                       cat => (
@@ -615,7 +615,7 @@ export default function AdminPage() {
                     value={formState.badge}
                     onChange={e => handleChange('badge', e.target.value)}
                     placeholder="New, Best Seller..."
-                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#D7FF3B]"
+                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
                   />
                 </div>
               </div>
@@ -632,7 +632,7 @@ export default function AdminPage() {
                     value={formState.price}
                     onChange={e => handleChange('price', e.target.value)}
                     required
-                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#D7FF3B]"
+                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
                   />
                 </div>
                 <div className="space-y-1">
@@ -648,7 +648,7 @@ export default function AdminPage() {
                     min={0}
                     value={formState.originalPrice}
                     onChange={e => handleChange('originalPrice', e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#D7FF3B]"
+                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
                   />
                 </div>
               </div>
@@ -662,7 +662,7 @@ export default function AdminPage() {
                   id="admin-image-file"
                   accept="image/*"
                   onChange={e => handleImageFile(e.target.files?.[0] ?? null)}
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-[#A8ACB8] file:mr-3 file:rounded-full file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[#F4F6FA] hover:file:bg-white/15 focus:outline-none focus:border-[#D7FF3B]"
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-[#A8ACB8] file:mr-3 file:rounded-full file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[#F4F6FA] hover:file:bg-white/15 focus:outline-none focus:border-[#FFD700]"
                 />
                 <div className="flex items-center justify-between gap-3 pt-2">
                   <p className="text-[11px] text-[#6B7280]">
@@ -700,7 +700,7 @@ export default function AdminPage() {
                   value={formState.description}
                   onChange={e => handleChange('description', e.target.value)}
                   rows={3}
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#D7FF3B] resize-none"
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700] resize-none"
                 />
               </div>
 
@@ -714,7 +714,7 @@ export default function AdminPage() {
                   onChange={e => handleChange('specsText', e.target.value)}
                   rows={4}
                   placeholder={'Processor: Intel Core i7-13700H\nRAM: 16GB DDR5'}
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#D7FF3B] resize-none"
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700] resize-none"
                 />
               </div>
 
@@ -724,7 +724,7 @@ export default function AdminPage() {
                     type="checkbox"
                     checked={formState.inStock}
                     onChange={e => handleChange('inStock', e.target.checked)}
-                    className="w-4 h-4 rounded border-white/20 bg-white/5 text-[#D7FF3B]"
+                    className="w-4 h-4 rounded border-white/20 bg-white/5 text-[#FFD700]"
                   />
                   In stock
                 </label>
@@ -742,7 +742,7 @@ export default function AdminPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-full text-xs font-semibold bg-[#D7FF3B] text-[#0B0C0F] hover:bg-[#e0ff5c]"
+                    className="px-4 py-2 rounded-full text-xs font-semibold bg-[#FFD700] text-[#070A15] hover:bg-[#ffe44d]"
                   >
                     {editingId ? 'Save Changes' : 'Create Product'}
                   </button>
@@ -781,7 +781,7 @@ export default function AdminPage() {
               <section className="lg:col-span-2 rounded-3xl bg-[#111318] border border-white/5 overflow-hidden">
                 <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
                   <p className="text-sm font-semibold text-[#F4F6FA] flex items-center gap-2">
-                    <ClipboardList className="w-4 h-4 text-[#D7FF3B]" />
+                    <ClipboardList className="w-4 h-4 text-[#FFD700]" />
                     Inbox
                   </p>
                   <p className="text-xs text-[#A8ACB8]">{repairs.length} total</p>
@@ -818,7 +818,7 @@ export default function AdminPage() {
                                 resp?.status === 'done'
                                   ? 'bg-green-500/15 text-green-400'
                                   : resp
-                                  ? 'bg-[#D7FF3B]/15 text-[#D7FF3B]'
+                                  ? 'bg-[#FFD700]/15 text-[#FFD700]'
                                   : 'bg-white/5 text-[#A8ACB8]'
                               }`}
                             >
@@ -877,7 +877,7 @@ export default function AdminPage() {
                               onChange={(e) => setReplyStatus(e.target.value as RepairStatus)}
                               aria-label="Repair status"
                               title="Repair status"
-                              className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#D7FF3B]"
+                              className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
                             >
                               {(['new', 'quoted', 'scheduled', 'in_progress', 'done'] as const).map((s) => (
                                 <option key={s} value={s}>
@@ -908,7 +908,7 @@ export default function AdminPage() {
                             value={replyMessage}
                             onChange={(e) => setReplyMessage(e.target.value)}
                             rows={6}
-                            className="w-full px-3 py-3 rounded-2xl bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#D7FF3B] resize-none"
+                            className="w-full px-3 py-3 rounded-2xl bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700] resize-none"
                             placeholder="Write your response, quote, schedule, or updates..."
                           />
                           <div className="flex items-center justify-between">
@@ -922,7 +922,7 @@ export default function AdminPage() {
                               <button
                                 type="button"
                                 onClick={saveRepairReply}
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#D7FF3B] text-[#0B0C0F] text-sm font-semibold hover:bg-[#e0ff5c] transition-colors"
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FFD700] text-[#070A15] text-sm font-semibold hover:bg-[#ffe44d] transition-colors"
                               >
                                 Save reply
                               </button>

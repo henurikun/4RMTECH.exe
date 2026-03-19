@@ -1,16 +1,18 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { allProducts, type Product } from '../data/products';
+import { allComponents } from '../data/pcComponents';
 
 const STORAGE_KEY = '4rmtech_cart';
 
 export interface CartItem {
   productId: string;
   quantity: number;
+  productData?: Product;
 }
 
 interface CartContextValue {
   items: CartItem[];
-  addItem: (productId: string, quantity?: number) => void;
+  addItem: (productId: string, quantity?: number, productData?: Product) => void;
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   getProduct: (id: string) => Product | undefined;
@@ -43,7 +45,7 @@ function saveCart(items: CartItem[]) {
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>(loadCart);
 
-  const addItem = useCallback((productId: string, quantity = 1) => {
+  const addItem = useCallback((productId: string, quantity = 1, productData?: Product) => {
     setItems((prev) => {
       const existing = prev.find((i) => i.productId === productId);
       let next: CartItem[];
@@ -52,7 +54,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           i.productId === productId ? { ...i, quantity: i.quantity + quantity } : i
         );
       } else {
-        next = [...prev, { productId, quantity }];
+        next = [...prev, { productId, quantity, productData }];
       }
       saveCart(next);
       return next;
@@ -81,7 +83,30 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     });
   }, [removeItem]);
 
-  const getProduct = useCallback((id: string) => allProducts.find((p) => p.id === id), []);
+  const getProduct = useCallback((id: string) => {
+    const item = items.find((i) => i.productId === id);
+    if (item?.productData) return item.productData;
+
+    let p = allProducts.find((p) => p.id === id);
+    if (p) return p;
+
+    for (const cat of Object.values(allComponents)) {
+      const comp = cat.find((c) => c.id === id);
+      if (comp) {
+        return {
+          id: comp.id,
+          name: comp.name,
+          category: comp.category,
+          price: comp.price,
+          image: comp.image,
+          specs: comp.specs,
+          description: comp.description,
+          inStock: true
+        } as Product;
+      }
+    }
+    return undefined;
+  }, [items]);
 
   const totalItems = useMemo(
     () => items.reduce((sum, i) => sum + i.quantity, 0),
@@ -90,10 +115,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const subtotal = useMemo(() => {
     return items.reduce((sum, i) => {
-      const p = allProducts.find((x) => x.id === i.productId);
+      const p = getProduct(i.productId);
       return sum + (p ? p.price * i.quantity : 0);
     }, 0);
-  }, [items]);
+  }, [items, getProduct]);
 
   const clearCart = useCallback(() => {
     setItems([]);

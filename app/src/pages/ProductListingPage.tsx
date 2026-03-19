@@ -68,9 +68,9 @@ export default function ProductListingPage() {
   const isInCart = (productId: string) => items.some((i) => i.productId === productId);
 
   return (
-    <div className="min-h-screen bg-[#0B0C0F]">
+    <div className="min-h-screen">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-[#0B0C0F]/95 backdrop-blur-md border-b border-white/5">
+      <header className="sticky top-0 z-50 bg-[#070A15]/85 backdrop-blur-md border-b border-white/10">
         <div className="flex items-center justify-between px-6 lg:px-12 py-4">
           <div className="flex items-center gap-6">
             <Link 
@@ -107,7 +107,7 @@ export default function ProductListingPage() {
                 onClick={() => setFilter(f)}
                 className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                   filter === f
-                    ? 'bg-[#D7FF3B] text-[#0B0C0F]'
+                    ? 'bg-[#FFD700] text-[#070A15]'
                     : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
                 }`}
               >
@@ -123,7 +123,7 @@ export default function ProductListingPage() {
               onChange={(e) => setSort(e.target.value as typeof sort)}
               aria-label="Sort products"
               title="Sort products"
-              className="px-4 py-2 bg-white/5 border border-white/10 rounded-full text-sm text-[#F4F6FA] focus:outline-none focus:border-[#D7FF3B]"
+              className="px-4 py-2 bg-white/5 border border-white/10 rounded-full text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
             >
               <option value="featured">Featured</option>
               <option value="price-low">Price: Low to High</option>
@@ -138,7 +138,7 @@ export default function ProductListingPage() {
         {products.length === 0 ? (
           <div className="text-center py-20">
             <p className="text-[#A8ACB8] text-lg">No products found in this category.</p>
-            <Link to="/" className="inline-block mt-4 text-[#D7FF3B] hover:underline">
+            <Link to="/" className="inline-block mt-4 text-[#FFD700] hover:underline">
               Return to home
             </Link>
           </div>
@@ -147,7 +147,7 @@ export default function ProductListingPage() {
             {products.map((product) => (
               <div
                 key={product.id}
-                className="group bg-[#111318] rounded-2xl overflow-hidden border border-white/5 hover:border-[#D7FF3B]/30 transition-all duration-300"
+                className="group bg-[#111318] rounded-2xl overflow-hidden border border-white/5 hover:border-[#FFD700]/30 transition-all duration-300"
               >
                 {/* Image */}
                 <div className="relative aspect-[4/3] overflow-hidden">
@@ -157,7 +157,7 @@ export default function ProductListingPage() {
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   />
                   {product.badge && (
-                    <div className="absolute top-4 left-4 px-3 py-1 bg-[#D7FF3B] text-[#0B0C0F] text-xs font-bold rounded-full">
+                    <div className="absolute top-4 left-4 px-3 py-1 bg-[#FFD700] text-[#070A15] text-xs font-bold rounded-full">
                       {product.badge}
                     </div>
                   )}
@@ -191,7 +191,7 @@ export default function ProductListingPage() {
                   {/* Price & CTA */}
                   <div className="flex items-center justify-between pt-4 border-t border-white/5">
                     <div>
-                      <span className="font-['Space_Grotesk'] text-2xl font-bold text-[#D7FF3B]">
+                      <span className="font-['Space_Grotesk'] text-2xl font-bold text-[#FFD700]">
                         {formatCurrency(product.price)}
                       </span>
                       {product.originalPrice && (
@@ -207,7 +207,7 @@ export default function ProductListingPage() {
                       className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-colors ${
                         isInCart(product.id)
                           ? 'bg-green-500/20 text-green-400 cursor-default'
-                          : 'bg-[#D7FF3B] text-[#0B0C0F] hover:bg-[#e0ff5c]'
+                          : 'bg-[#FFD700] text-[#070A15] hover:bg-[#ffe44d]'
                       }`}
                     >
                       {isInCart(product.id) ? (
@@ -229,7 +229,7 @@ export default function ProductListingPage() {
 
       {/* PC Builder CTA */}
       <section className="px-6 lg:px-12 py-12 border-t border-white/5">
-        <div className="bg-gradient-to-r from-[#6E2B88]/30 to-[#D7FF3B]/10 rounded-3xl p-8 lg:p-12">
+        <div className="bg-gradient-to-r from-[#4169E1]/25 to-[#FFD700]/10 rounded-3xl p-8 lg:p-12">
           <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
             <div>
               <h2 className="font-['Space_Grotesk'] text-2xl lg:text-3xl font-bold text-[#F4F6FA] mb-3">
@@ -242,7 +242,7 @@ export default function ProductListingPage() {
             </div>
             <Link
               to="/pc-builder"
-              className="flex items-center gap-2 px-8 py-4 bg-[#D7FF3B] text-[#0B0C0F] font-bold rounded-full hover:bg-[#e0ff5c] transition-colors whitespace-nowrap"
+              className="flex items-center gap-2 px-8 py-4 bg-[#FFD700] text-[#070A15] font-bold rounded-full hover:bg-[#ffe44d] transition-colors whitespace-nowrap"
             >
               <Star className="w-5 h-5" />
               Start Building

@@ -10,8 +10,8 @@ export default function CartPage() {
 
   if (items.length === 0) {
     return (
-      <div className="min-h-screen bg-[#0B0C0F]">
-        <header className="sticky top-0 z-50 bg-[#0B0C0F]/95 backdrop-blur-md border-b border-white/5">
+      <div className="min-h-screen">
+        <header className="sticky top-0 z-50 bg-[#070A15]/85 backdrop-blur-md border-b border-white/10">
           <div className="flex items-center justify-between px-6 lg:px-12 py-4">
             <Link
               to="/"
@@ -27,7 +27,7 @@ export default function CartPage() {
           <p className="text-[#A8ACB8] text-lg mb-6">Your cart is empty.</p>
           <Link
             to="/category/devices"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-[#D7FF3B] text-[#0B0C0F] font-medium rounded-full hover:bg-[#e0ff5c] transition-colors"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-[#FFD700] text-[#070A15] font-medium rounded-full hover:bg-[#ffe44d] transition-colors"
           >
             Shop products
           </Link>
@@ -37,8 +37,8 @@ export default function CartPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C0F]">
-      <header className="sticky top-0 z-50 bg-[#0B0C0F]/95 backdrop-blur-md border-b border-white/5">
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-50 bg-[#070A15]/85 backdrop-blur-md border-b border-white/10">
         <div className="flex items-center justify-between px-6 lg:px-12 py-4">
           <Link
             to="/"
@@ -105,7 +105,7 @@ export default function CartPage() {
                       </button>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="font-['Space_Grotesk'] font-bold text-[#D7FF3B]">
+                      <span className="font-['Space_Grotesk'] font-bold text-[#FFD700]">
                         {formatCurrency(product.price * item.quantity)}
                       </span>
                       <button
@@ -127,11 +127,11 @@ export default function CartPage() {
         <div className="max-w-4xl mx-auto mt-10 pt-6 border-t border-white/10">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
             <p className="text-[#A8ACB8]">
-              Subtotal: <span className="font-['Space_Grotesk'] text-xl font-bold text-[#D7FF3B]">{formatCurrency(subtotal)}</span>
+              Subtotal: <span className="font-['Space_Grotesk'] text-xl font-bold text-[#FFD700]">{formatCurrency(subtotal)}</span>
             </p>
             <Link
               to="/checkout"
-              className="inline-flex justify-center items-center px-8 py-4 bg-[#D7FF3B] text-[#0B0C0F] font-semibold rounded-full hover:bg-[#e0ff5c] transition-colors"
+              className="inline-flex justify-center items-center px-8 py-4 bg-[#FFD700] text-[#070A15] font-semibold rounded-full hover:bg-[#ffe44d] transition-colors"
             >
               Proceed to checkout
             </Link>

@@ -13,7 +13,6 @@ import {
   RotateCcw,
   Check,
   AlertCircle,
-  Save,
   Share2
 } from 'lucide-react';
 import { 
@@ -21,6 +20,7 @@ import {
   componentCategories, 
   type PCComponent 
 } from '../data/pcComponents';
+import { useCart } from '../context/CartContext';
 
 interface BuildConfig {
   cpu: PCComponent | null;
@@ -61,12 +61,12 @@ const categoryIcons: Record<string, React.ElementType> = {
 };
 
 export default function PCBuilderPage() {
+  const { addItem } = useCart();
   const [build, setBuild] = useState<BuildConfig>(initialBuild);
   const [activeCategory, setActiveCategory] = useState<string>('cpu');
   const [budget, setBudget] = useState<number>(30000);
   const [showBudgetWarning, setShowBudgetWarning] = useState(false);
   const [cart, setCart] = useState(false);
-  const [savedBuilds, setSavedBuilds] = useState<Array<{ build: BuildConfig; extras: ExtraItem[] }>>([]);
   const [extras, setExtras] = useState<ExtraItem[]>([]);
 
   const totalPrice = useMemo(() => {
@@ -121,17 +121,44 @@ export default function PCBuilderPage() {
     setExtras([]);
   };
 
-  const saveBuild = () => {
-    setSavedBuilds([...savedBuilds, { build, extras }]);
-    alert('Build saved successfully!');
-  };
-
   const addToCart = () => {
     const selectedComponents = Object.values(build).filter(Boolean);
-    if (selectedComponents.length === 0) {
+    if (selectedComponents.length === 0 && extras.length === 0) {
       alert('Please select at least one component');
       return;
     }
+    
+    selectedComponents.forEach((component) => {
+      if (component) {
+        const productData = {
+          id: component.id,
+          name: component.name,
+          category: component.category,
+          price: component.price,
+          image: component.image,
+          specs: component.specs,
+          description: component.description,
+          inStock: true
+        };
+        addItem(component.id, 1, productData);
+      }
+    });
+
+    extras.forEach((extra, index) => {
+      const extraId = `extra-${extra.name.replace(/\s+/g, '-').toLowerCase()}-${index}`;
+      const productData = {
+        id: extraId,
+        name: extra.name,
+        category: 'extra',
+        price: extra.price,
+        image: '/images/pc/case.png',
+        specs: {},
+        description: 'Extra item included in package',
+        inStock: true
+      };
+      addItem(extraId, 1, productData);
+    });
+
     setCart(true);
     setTimeout(() => setCart(false), 2000);
   };
@@ -416,9 +443,9 @@ export default function PCBuilderPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0C0F]">
+    <div className="min-h-screen">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-[#0B0C0F]/95 backdrop-blur-md border-b border-white/5">
+      <header className="sticky top-0 z-50 bg-[#070A15]/85 backdrop-blur-md border-b border-white/10">
         <div className="flex items-center justify-between px-6 lg:px-12 py-4">
           <div className="flex items-center gap-6">
             <Link 
@@ -435,18 +462,11 @@ export default function PCBuilderPage() {
           
           <div className="flex items-center gap-4">
             <button
-              onClick={saveBuild}
-              className="flex items-center gap-2 px-4 py-2 text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors"
-            >
-              <Save className="w-4 h-4" />
-              <span className="hidden sm:inline">Save</span>
-            </button>
-            <button
               onClick={clearBuild}
               className="flex items-center gap-2 px-4 py-2 text-[#A8ACB8] hover:text-red-400 transition-colors"
             >
               <RotateCcw className="w-4 h-4" />
-              <span className="hidden sm:inline">Reset</span>
+              <span className="hidden sm:inline">Clear all selected items</span>
             </button>
           </div>
         </div>
@@ -490,11 +510,11 @@ export default function PCBuilderPage() {
                   <button
                     key={p.id}
                     onClick={() => applyPackagePreset(p.id)}
-                    className="w-full p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-[#D7FF3B]/30 transition-colors text-left"
+                    className="w-full p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-[#FFD700]/30 transition-colors text-left"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="text-sm font-semibold text-[#F4F6FA]">{p.name}</div>
-                      <div className="text-sm font-bold text-[#D7FF3B]">{formatCurrency(p.total)}</div>
+                      <div className="text-sm font-bold text-[#FFD700]">{formatCurrency(p.total)}</div>
                     </div>
                     <div className="text-xs text-[#A8ACB8] mt-2 line-clamp-2">
                       {p.items.map((i) => i.name).join(' • ')}
@@ -521,25 +541,25 @@ export default function PCBuilderPage() {
                     onClick={() => setActiveCategory(cat.id)}
                     className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${
                       activeCategory === cat.id
-                        ? 'bg-[#D7FF3B]/10 border border-[#D7FF3B]/30'
+                        ? 'bg-[#FFD700]/10 border border-[#FFD700]/30'
                         : 'hover:bg-white/5'
                     }`}
                   >
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                      selected ? 'bg-[#D7FF3B]/20' : 'bg-white/5'
+                      selected ? 'bg-[#FFD700]/20' : 'bg-white/5'
                     }`}>
-                      <Icon className={`w-5 h-5 ${selected ? 'text-[#D7FF3B]' : 'text-[#A8ACB8]'}`} />
+                      <Icon className={`w-5 h-5 ${selected ? 'text-[#FFD700]' : 'text-[#A8ACB8]'}`} />
                     </div>
                     <div className="flex-1 text-left">
                       <div className="text-sm font-medium text-[#F4F6FA]">{cat.name}</div>
                       {selected ? (
-                        <div className="text-xs text-[#D7FF3B] truncate">{selected.name}</div>
+                        <div className="text-xs text-[#FFD700] truncate">{selected.name}</div>
                       ) : (
                         <div className="text-xs text-[#A8ACB8]">Not selected</div>
                       )}
                     </div>
                     {selected && (
-                      <Check className="w-4 h-4 text-[#D7FF3B]" />
+                      <Check className="w-4 h-4 text-[#FFD700]" />
                     )}
                   </button>
                 );
@@ -560,7 +580,7 @@ export default function PCBuilderPage() {
                 <p className="text-sm text-[#A8ACB8]">Set your target budget for recommendations</p>
               </div>
               <div className="text-right">
-                <div className="font-['Space_Grotesk'] text-2xl font-bold text-[#D7FF3B]">
+                <div className="font-['Space_Grotesk'] text-2xl font-bold text-[#FFD700]">
                   {formatCurrency(budget)}
                 </div>
                 <div className={`text-sm ${showBudgetWarning ? 'text-red-400' : 'text-[#A8ACB8]'}`}>
@@ -577,7 +597,7 @@ export default function PCBuilderPage() {
               step="500"
               value={budget}
               onChange={(e) => setBudget(parseInt(e.target.value))}
-              className="w-full h-2 bg-white/10 rounded-full appearance-none cursor-pointer accent-[#D7FF3B]"
+              className="w-full h-2 bg-white/10 rounded-full appearance-none cursor-pointer accent-[#FFD700]"
             />
             <div className="flex justify-between mt-2 text-xs text-[#A8ACB8]">
               <span>{formatCurrency(10000)}</span>
@@ -623,15 +643,15 @@ export default function PCBuilderPage() {
                     disabled={isOverBudget && !isSelected}
                     className={`relative p-5 rounded-2xl border text-left transition-all ${
                       isSelected
-                        ? 'bg-[#D7FF3B]/10 border-[#D7FF3B]'
+                        ? 'bg-[#FFD700]/10 border-[#FFD700]'
                         : isOverBudget
                         ? 'bg-white/5 border-white/5 opacity-50'
                         : 'bg-[#111318] border-white/5 hover:border-white/20'
                     }`}
                   >
                     {isSelected && (
-                      <div className="absolute top-4 right-4 w-6 h-6 bg-[#D7FF3B] rounded-full flex items-center justify-center">
-                        <Check className="w-4 h-4 text-[#0B0C0F]" />
+                      <div className="absolute top-4 right-4 w-6 h-6 bg-[#FFD700] rounded-full flex items-center justify-center">
+                        <Check className="w-4 h-4 text-[#070A15]" />
                       </div>
                     )}
                     
@@ -658,7 +678,7 @@ export default function PCBuilderPage() {
                     </div>
                     
                     <div className="flex items-center justify-between pt-3 border-t border-white/5">
-                      <span className="font-['Space_Grotesk'] text-xl font-bold text-[#D7FF3B]">
+                      <span className="font-['Space_Grotesk'] text-xl font-bold text-[#FFD700]">
                         {formatCurrency(component.price)}
                       </span>
                       <span className="text-xs text-[#A8ACB8]">
@@ -686,7 +706,7 @@ export default function PCBuilderPage() {
             </div>
             <div className="h-2 bg-white/10 rounded-full overflow-hidden">
               <div 
-                className="h-full bg-[#D7FF3B] transition-all duration-500"
+                className="h-full bg-[#FFD700] transition-all duration-500"
                 style={{ width: `${(selectedCount / 8) * 100}%` }}
               />
             </div>
@@ -705,7 +725,7 @@ export default function PCBuilderPage() {
                     <div className="text-xs text-[#A8ACB8] capitalize">{category}</div>
                     <div className="text-sm text-[#F4F6FA] truncate">{component.name}</div>
                   </div>
-                  <div className="text-sm font-semibold text-[#D7FF3B]">
+                  <div className="text-sm font-semibold text-[#FFD700]">
                     {formatCurrency(component.price)}
                   </div>
                 </div>
@@ -724,7 +744,7 @@ export default function PCBuilderPage() {
                       className="flex items-center justify-between gap-3 p-3 bg-white/5 rounded-xl"
                     >
                       <div className="text-sm text-[#F4F6FA] truncate">{item.name}</div>
-                      <div className="text-sm font-semibold text-[#D7FF3B]">
+                      <div className="text-sm font-semibold text-[#FFD700]">
                         {formatCurrency(item.price)}
                       </div>
                     </div>
@@ -760,7 +780,7 @@ export default function PCBuilderPage() {
           <div className="border-t border-white/5 pt-6 mb-6">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[#A8ACB8]">Total</span>
-              <span className="font-['Space_Grotesk'] text-3xl font-bold text-[#D7FF3B]">
+              <span className="font-['Space_Grotesk'] text-3xl font-bold text-[#FFD700]">
                 {formatCurrency(totalPrice)}
               </span>
             </div>
@@ -774,13 +794,13 @@ export default function PCBuilderPage() {
           {/* Actions */}
           <button
             onClick={addToCart}
-            disabled={selectedCount === 0}
+            disabled={selectedCount === 0 && extras.length === 0}
             className={`w-full flex items-center justify-center gap-2 py-4 rounded-full font-bold transition-all ${
-              selectedCount === 0
+              selectedCount === 0 && extras.length === 0
                 ? 'bg-white/10 text-[#A8ACB8] cursor-not-allowed'
                 : cart
                 ? 'bg-green-500 text-white'
-                : 'bg-[#D7FF3B] text-[#0B0C0F] hover:bg-[#e0ff5c]'
+                : 'bg-[#FFD700] text-[#070A15] hover:bg-[#ffe44d]'
             }`}
           >
             {cart ? (

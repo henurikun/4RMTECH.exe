@@ -160,7 +160,7 @@ export default function ProductSection({
   return (
     <section
       ref={sectionRef}
-      className="relative w-full h-screen overflow-hidden bg-[#0B0C0F]"
+      className="relative w-full h-screen overflow-hidden"
       style={{ zIndex }}
       id={id}
     >
@@ -180,8 +180,8 @@ export default function ProductSection({
         <div
           className={`absolute inset-0 ${
             isImageLeft
-              ? 'bg-gradient-to-r from-transparent via-transparent to-[#0B0C0F]/80'
-              : 'bg-gradient-to-l from-transparent via-transparent to-[#0B0C0F]/80'
+              ? 'bg-gradient-to-r from-transparent via-transparent to-[#070A15]/80'
+              : 'bg-gradient-to-l from-transparent via-transparent to-[#070A15]/80'
           }`}
         />
       </div>
@@ -191,14 +191,14 @@ export default function ProductSection({
         ref={textPanelRef}
         className={`absolute top-0 ${
           isImageLeft ? 'right-0' : 'left-0'
-        } w-[44vw] h-full bg-[#0B0C0F] flex flex-col justify-center px-8 lg:px-12`}
+        } w-[44vw] h-full bg-[#070A15]/95 flex flex-col justify-center px-8 lg:px-12`}
       >
         {/* Decorative rule */}
         <div
           ref={ruleRef}
           className={`absolute ${
             isImageLeft ? 'left-[8vw] top-[18vh]' : 'left-[4vw] top-[42vh]'
-          } ${isImageLeft ? 'w-[2px] h-[28vh]' : 'w-[28vw] h-[2px]'} bg-[#D7FF3B]/70`}
+          } ${isImageLeft ? 'w-[2px] h-[28vh]' : 'w-[28vw] h-[2px]'} bg-[#FFD700]/70`}
         />
 
         {/* Headline */}
@@ -225,7 +225,7 @@ export default function ProductSection({
         <div ref={ctaRef} className="flex flex-wrap items-center gap-4">
           <Link 
             to={ctaLink}
-            className="group flex items-center gap-2 px-6 py-3 bg-[#D7FF3B] text-[#0B0C0F] font-medium rounded-full hover:bg-[#e0ff5c] transition-colors"
+            className="group flex items-center gap-2 px-6 py-3 bg-[#FFD700] text-[#070A15] font-medium rounded-full hover:bg-[#ffe44d] transition-colors"
           >
             {ctaPrimary}
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />

@@ -12,19 +12,20 @@
     --card-foreground: 225 20% 97%;
     --popover: 220 14% 6%;
     --popover-foreground: 225 20% 97%;
-    --primary: 78 100% 62%;
-    --primary-foreground: 220 14% 4%;
-    --secondary: 285 52% 35%;
+    /* Brand: royal blue + golden yellow */
+    --primary: 225 73% 57%; /* ~ #4169E1 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 225 45% 24%;
     --secondary-foreground: 225 20% 97%;
     --muted: 220 10% 15%;
     --muted-foreground: 220 10% 65%;
-    --accent: 78 100% 62%;
-    --accent-foreground: 220 14% 4%;
+    --accent: 51 100% 50%; /* ~ #FFD700 */
+    --accent-foreground: 225 45% 12%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
     --border: 220 10% 20%;
     --input: 220 10% 15%;
-    --ring: 78 100% 62%;
+    --ring: 51 100% 50%;
     --radius: 1.125rem;
   }
 }
@@ -39,8 +40,10 @@
   }
   
   body {
-    @apply bg-[#0B0C0F] text-[#F4F6FA] antialiased;
+    @apply text-[#F4F6FA] antialiased;
     font-family: 'Inter', sans-serif;
+    background: linear-gradient(180deg, #252525 -10%, #070A15 50%, #252525 120%);
+    background-attachment: fixed;
   }
   
   h1, h2, h3, h4, h5, h6 {
@@ -79,7 +82,7 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #0B0C0F;
+  background: #070A15;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -93,6 +96,6 @@
 
 /* Selection */
 ::selection {
-  background: rgba(215, 255, 59, 0.3);
+  background: rgba(255, 215, 0, 0.28);
   color: #F4F6FA;
 }

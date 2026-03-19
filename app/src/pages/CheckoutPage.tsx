@@ -60,8 +60,8 @@ export default function CheckoutPage() {
 
   if (items.length === 0 && !successOrderId) {
     return (
-      <div className="min-h-screen bg-[#0B0C0F]">
-        <header className="sticky top-0 z-50 bg-[#0B0C0F]/95 backdrop-blur-md border-b border-white/5">
+      <div className="min-h-screen">
+        <header className="sticky top-0 z-50 bg-[#070A15]/85 backdrop-blur-md border-b border-white/10">
           <div className="flex items-center justify-between px-6 lg:px-12 py-4">
             <Link
               to="/"
@@ -81,7 +81,7 @@ export default function CheckoutPage() {
           </p>
           <Link
             to="/category/devices"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-[#D7FF3B] text-[#0B0C0F] font-medium rounded-full hover:bg-[#e0ff5c] transition-colors"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-[#FFD700] text-[#070A15] font-medium rounded-full hover:bg-[#ffe44d] transition-colors"
           >
             Shop products
           </Link>
@@ -134,11 +134,11 @@ export default function CheckoutPage() {
 
   if (successOrderId) {
     return (
-      <div className="min-h-screen bg-[#0B0C0F]">
+      <div className="min-h-screen">
         <main className="px-6 lg:px-12 py-24">
           <div className="max-w-xl mx-auto rounded-3xl bg-[#111318] border border-white/5 p-8 text-center">
-            <div className="inline-flex w-16 h-16 rounded-full bg-[#D7FF3B]/20 items-center justify-center mb-4">
-              <CheckCircle className="w-9 h-9 text-[#D7FF3B]" />
+            <div className="inline-flex w-16 h-16 rounded-full bg-[#FFD700]/20 items-center justify-center mb-4">
+              <CheckCircle className="w-9 h-9 text-[#FFD700]" />
             </div>
             <h1 className="font-['Space_Grotesk'] text-2xl font-bold text-[#F4F6FA] mb-2">
               Order placed
@@ -146,12 +146,12 @@ export default function CheckoutPage() {
             <p className="text-[#A8ACB8] mb-6">
               Thanks! Your order reference is:
             </p>
-            <p className="font-mono text-xl font-bold text-[#D7FF3B] mb-8">
+            <p className="font-mono text-xl font-bold text-[#FFD700] mb-8">
               {successOrderId}
             </p>
             <Link
               to="/category/all"
-              className="inline-flex items-center justify-center px-8 py-4 bg-[#D7FF3B] text-[#0B0C0F] font-semibold rounded-full hover:bg-[#e0ff5c] transition-colors"
+              className="inline-flex items-center justify-center px-8 py-4 bg-[#FFD700] text-[#070A15] font-semibold rounded-full hover:bg-[#ffe44d] transition-colors"
             >
               Continue shopping
             </Link>
@@ -162,8 +162,8 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C0F]">
-      <header className="sticky top-0 z-50 bg-[#0B0C0F]/95 backdrop-blur-md border-b border-white/5">
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-50 bg-[#070A15]/85 backdrop-blur-md border-b border-white/10">
         <div className="flex items-center justify-between px-6 lg:px-12 py-4">
           <Link
             to="/cart"
@@ -184,7 +184,7 @@ export default function CheckoutPage() {
           <form onSubmit={placeOrder} className="lg:col-span-3 space-y-6">
             <section className="rounded-3xl bg-[#111318] border border-white/5 p-6">
               <h2 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA] mb-4 flex items-center gap-2">
-                <Truck className="w-5 h-5 text-[#D7FF3B]" />
+                <Truck className="w-5 h-5 text-[#FFD700]" />
                 Shipping details
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -192,34 +192,34 @@ export default function CheckoutPage() {
                   value={form.name}
                   onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
                   placeholder="Full name"
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#D7FF3B]"
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700]"
                 />
                 <input
                   value={form.phone}
                   onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
                   placeholder="Phone"
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#D7FF3B]"
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700]"
                 />
                 <input
                   value={form.email}
                   onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
                   placeholder="Email"
                   type="email"
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#D7FF3B] sm:col-span-2"
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700] sm:col-span-2"
                 />
                 <textarea
                   value={form.address}
                   onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
                   placeholder="Delivery address"
                   rows={3}
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#D7FF3B] sm:col-span-2 resize-none"
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700] sm:col-span-2 resize-none"
                 />
               </div>
             </section>
 
             <section className="rounded-3xl bg-[#111318] border border-white/5 p-6">
               <h2 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA] mb-4 flex items-center gap-2">
-                <CreditCard className="w-5 h-5 text-[#D7FF3B]" />
+                <CreditCard className="w-5 h-5 text-[#FFD700]" />
                 Payment
               </h2>
               <div className="flex flex-wrap gap-2 mb-4">
@@ -228,7 +228,7 @@ export default function CheckoutPage() {
                   onClick={() => setPaymentMethod('cod')}
                   className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                     paymentMethod === 'cod'
-                      ? 'bg-[#D7FF3B] text-[#0B0C0F]'
+                      ? 'bg-[#FFD700] text-[#070A15]'
                       : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
                   }`}
                 >
@@ -239,7 +239,7 @@ export default function CheckoutPage() {
                   onClick={() => setPaymentMethod('gcash')}
                   className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                     paymentMethod === 'gcash'
-                      ? 'bg-[#D7FF3B] text-[#0B0C0F]'
+                      ? 'bg-[#FFD700] text-[#070A15]'
                       : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
                   }`}
                 >
@@ -270,7 +270,7 @@ export default function CheckoutPage() {
 
             <button
               type="submit"
-              className="w-full px-8 py-4 bg-[#D7FF3B] text-[#0B0C0F] font-semibold rounded-full hover:bg-[#e0ff5c] transition-colors"
+            className="w-full px-8 py-4 bg-[#FFD700] text-[#070A15] font-semibold rounded-full hover:bg-[#ffe44d] transition-colors"
             >
               Place order ({formatCurrency(total)})
             </button>
@@ -309,7 +309,7 @@ export default function CheckoutPage() {
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-white/10">
                   <span className="text-[#A8ACB8]">Total</span>
-                  <span className="font-['Space_Grotesk'] text-lg font-bold text-[#D7FF3B]">
+                  <span className="font-['Space_Grotesk'] text-lg font-bold text-[#FFD700]">
                     {formatCurrency(total)}
                   </span>
                 </div>

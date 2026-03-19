@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import Navigation from './components/Navigation';
@@ -12,16 +12,22 @@ import CheckoutPage from './pages/CheckoutPage';
 
 gsap.registerPlugin(ScrollTrigger);
 
-// Scroll to top on route change
+// Scroll to top on route change; only kill ScrollTriggers when navigating away (not on refresh/initial load)
 function ScrollToTop() {
   const location = useLocation();
-  
+  const prevPathRef = useRef(location.pathname);
+
   useEffect(() => {
     window.scrollTo(0, 0);
-    // Kill all ScrollTriggers when changing routes
-    ScrollTrigger.getAll().forEach(st => st.kill());
+    const currentPath = location.pathname;
+    if (prevPathRef.current !== currentPath) {
+      ScrollTrigger.getAll().forEach((st) => st.kill());
+      prevPathRef.current = currentPath;
+    } else {
+      prevPathRef.current = currentPath;
+    }
   }, [location]);
-  
+
   return null;
 }
 
@@ -29,7 +35,7 @@ function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
-      <div className="relative bg-[#0B0C0F] min-h-screen">
+      <div className="relative min-h-screen">
         {/* Grain overlay */}
         <div className="grain-overlay" />
         

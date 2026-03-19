@@ -138,7 +138,7 @@ export default function HeroSection() {
   return (
     <section
       ref={sectionRef}
-      className="relative w-full h-screen overflow-hidden bg-[#0B0C0F] z-10"
+      className="relative w-full h-screen overflow-hidden z-10"
     >
       {/* Left image panel */}
       <div
@@ -151,21 +151,21 @@ export default function HeroSection() {
           className="w-full h-full object-cover"
         />
         {/* Gradient overlay for smooth transition */}
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-[#0B0C0F]/80" />
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-[#070A15]/80" />
       </div>
 
       {/* Right text panel */}
       <div
         ref={textPanelRef}
-        className="absolute right-0 top-0 w-[44vw] h-full bg-[#0B0C0F] flex flex-col justify-center px-8 lg:px-12"
+        className="absolute right-0 top-0 w-[44vw] h-full bg-[#070A15]/95 flex flex-col justify-center px-8 lg:px-12"
       >
         {/* New chip */}
         <div
           ref={chipRef}
-          className="mb-6 inline-flex items-center gap-2 px-3 py-1.5 bg-[#D7FF3B]/10 rounded-full w-fit"
+          className="mb-6 inline-flex items-center gap-2 px-3 py-1.5 bg-[#FFD700]/10 rounded-full w-fit"
         >
-          <span className="w-2 h-2 bg-[#D7FF3B] rounded-full animate-pulse" />
-          <span className="font-mono text-xs uppercase tracking-[0.12em] text-[#D7FF3B]">
+          <span className="w-2 h-2 bg-[#FFD700] rounded-full animate-pulse" />
+          <span className="font-mono text-xs uppercase tracking-[0.12em] text-[#FFD700]">
             New Drop
           </span>
         </div>
@@ -194,7 +194,7 @@ export default function HeroSection() {
         <div ref={ctaRef} className="flex flex-wrap items-center gap-4">
           <Link 
             to="/category/devices"
-            className="group flex items-center gap-2 px-6 py-3 bg-[#D7FF3B] text-[#0B0C0F] font-medium rounded-full hover:bg-[#e0ff5c] transition-colors"
+            className="group flex items-center gap-2 px-6 py-3 bg-[#FFD700] text-[#070A15] font-medium rounded-full hover:bg-[#ffe44d] transition-colors"
           >
             Shop devices
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />

@@ -34,7 +34,7 @@ export default function CategoryCarouselSection({ items }: CategoryCarouselSecti
   return (
     <section
       id="products"
-      className="relative w-full bg-[#0B0C0F] py-14 lg:py-20 border-y border-white/5"
+      className="relative w-full py-14 lg:py-20 border-y border-white/10"
     >
       <div className="px-6 lg:px-[8vw] flex flex-col gap-8">
         {/* Header */}
@@ -77,7 +77,7 @@ export default function CategoryCarouselSection({ items }: CategoryCarouselSecti
           {items.map((item) => (
             <article
               key={item.id}
-              className="snap-start shrink-0 w-[80%] sm:w-[60%] md:w-[40%] lg:w-[30%] bg-[#101218] border border-[#1f232d] rounded-2xl overflow-hidden hover:border-[#D7FF3B]/70 transition-colors"
+              className="snap-start shrink-0 w-[80%] sm:w-[60%] md:w-[40%] lg:w-[30%] bg-[#070A15]/55 backdrop-blur border border-white/10 rounded-2xl overflow-hidden hover:border-[#FFD700]/60 transition-colors"
             >
               <div className="relative h-44 w-full overflow-hidden">
                 <img
@@ -85,7 +85,7 @@ export default function CategoryCarouselSection({ items }: CategoryCarouselSecti
                   alt={item.headline}
                   className="w-full h-full object-cover"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0B0C0F]/80 via-transparent to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#070A15]/85 via-transparent to-transparent" />
               </div>
               <div className="p-5 flex flex-col gap-3">
                 <h3 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA]">
@@ -97,7 +97,7 @@ export default function CategoryCarouselSection({ items }: CategoryCarouselSecti
                 <div className="mt-2">
                   <Link
                     to={item.ctaLink}
-                    className="inline-flex items-center gap-2 text-sm font-medium text-[#D7FF3B] hover:text-[#f1ff7d] transition-colors"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-[#FFD700] hover:text-[#ffe44d] transition-colors"
                   >
                     {item.ctaPrimary}
                     <ArrowRight className="w-3 h-3" />

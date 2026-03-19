@@ -42,7 +42,7 @@ export default function Navigation() {
       <nav
         ref={navRef}
         className={`fixed top-0 left-0 right-0 z-[100] transition-all duration-500 ${isScrolled
-            ? 'bg-[#0B0C0F]/90 backdrop-blur-md border-b border-white/5'
+            ? 'bg-[#070A15]/85 backdrop-blur-md border-b border-white/10'
             : 'bg-transparent'
           }`}
       >
@@ -99,25 +99,25 @@ export default function Navigation() {
 
       {/* Mobile menu */}
       <div
-        className={`fixed inset-0 z-[99] bg-[#0B0C0F]/98 backdrop-blur-lg transition-all duration-500 ${isMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        className={`fixed inset-0 z-[99] bg-[#070A15]/96 backdrop-blur-lg transition-all duration-500 ${isMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
       >
         <div className="flex flex-col items-center justify-center h-full gap-8">
           <button
             onClick={() => scrollToSection('products')}
-            className="text-3xl font-['Space_Grotesk'] font-semibold text-[#F4F6FA] hover:text-[#D7FF3B] transition-colors"
+            className="text-3xl font-['Space_Grotesk'] font-semibold text-[#F4F6FA] hover:text-[#FFD700] transition-colors"
           >
             Shop
           </button>
           <button
             onClick={() => scrollToSection('repair')}
-            className="text-3xl font-['Space_Grotesk'] font-semibold text-[#F4F6FA] hover:text-[#D7FF3B] transition-colors"
+            className="text-3xl font-['Space_Grotesk'] font-semibold text-[#F4F6FA] hover:text-[#FFD700] transition-colors"
           >
             Repairs
           </button>
           <button
             onClick={() => scrollToSection('membership')}
-            className="text-3xl font-['Space_Grotesk'] font-semibold text-[#F4F6FA] hover:text-[#D7FF3B] transition-colors"
+            className="text-3xl font-['Space_Grotesk'] font-semibold text-[#F4F6FA] hover:text-[#FFD700] transition-colors"
           >
             Support
           </button>

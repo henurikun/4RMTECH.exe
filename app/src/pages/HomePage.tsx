@@ -150,9 +150,7 @@ export default function HomePage() {
   };
 
   return (
-    <div ref={mainRef} className="relative bg-[#0B0C0F]">
-      {/* Grain overlay */}
-      <div className="grain-overlay" />
+    <div ref={mainRef} className="relative">
       
       {/* Hero Section */}
       <HeroSection />
@@ -194,7 +192,7 @@ export default function HomePage() {
           setAdminError('');
         }}
         aria-label="Admin login"
-        className="fixed bottom-4 right-6 w-2 h-2 rounded-full bg-[#D7FF3B]/70 hover:bg-[#D7FF3B] transition-colors shadow-sm"
+        className="fixed bottom-4 right-6 w-2 h-2 rounded-full bg-[#FFD700]/70 hover:bg-[#FFD700] transition-colors shadow-sm"
       />
 
       {showAdminLogin && (
@@ -229,7 +227,7 @@ export default function HomePage() {
                   value={adminEmail}
                   onChange={e => setAdminEmail(e.target.value)}
                   autoComplete="off"
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-[#F4F6FA] focus:outline-none focus:border-[#D7FF3B]"
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
                 />
               </div>
               <div className="space-y-1">
@@ -245,7 +243,7 @@ export default function HomePage() {
                   value={adminPassword}
                   onChange={e => setAdminPassword(e.target.value)}
                   autoComplete="off"
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-[#F4F6FA] focus:outline-none focus:border-[#D7FF3B]"
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
                 />
               </div>
               {adminError && (
@@ -253,7 +251,7 @@ export default function HomePage() {
               )}
               <button
                 type="submit"
-                className="w-full mt-1 px-3 py-2 rounded-full bg-[#D7FF3B] text-[#0B0C0F] text-xs font-semibold hover:bg-[#e0ff5c] transition-colors"
+                  className="w-full mt-1 px-3 py-2 rounded-full bg-[#FFD700] text-[#070A15] text-xs font-semibold hover:bg-[#ffe44d] transition-colors"
               >
                 Enter
               </button>

@@ -220,13 +220,13 @@ export default function RepairSection() {
   return (
     <section
       ref={sectionRef}
-      className="relative w-full bg-[#0B0C0F] py-24 lg:py-32"
+      className="relative w-full py-24 lg:py-32"
       id="repair"
     >
       {/* Decorative cross lines */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[30%] right-[20%] w-[30vw] h-[2px] bg-[#D7FF3B]/10 rotate-45" />
-        <div className="absolute top-[50%] right-[20%] w-[30vw] h-[2px] bg-[#D7FF3B]/10 -rotate-45" />
+        <div className="absolute top-[30%] right-[20%] w-[30vw] h-[2px] bg-[#FFD700]/10 rotate-45" />
+        <div className="absolute top-[50%] right-[20%] w-[30vw] h-[2px] bg-[#FFD700]/10 -rotate-45" />
       </div>
 
       <div className="relative px-8 lg:px-[8vw]">
@@ -255,11 +255,11 @@ export default function RepairSection() {
                   key={service.title}
                   className="service-item flex items-start gap-4 group"
                 >
-                  <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-[#D7FF3B]/10 flex items-center justify-center">
-                    <service.icon className="w-5 h-5 text-[#D7FF3B]" />
+                  <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-[#FFD700]/10 flex items-center justify-center">
+                    <service.icon className="w-5 h-5 text-[#FFD700]" />
                   </div>
                   <div>
-                    <h3 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA] mb-1 group-hover:text-[#D7FF3B] transition-colors">
+                    <h3 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA] mb-1 group-hover:text-[#FFD700] transition-colors">
                       {service.title}
                     </h3>
                     <p className="text-[#A8ACB8] text-sm">{service.description}</p>
@@ -272,12 +272,12 @@ export default function RepairSection() {
           {/* Right column - Booking card */}
           <div
             ref={cardRef}
-            className="bg-[#0B0C0F] border-2 border-[#D7FF3B] rounded-[18px] p-6 lg:p-8"
+            className="bg-[#070A15]/80 backdrop-blur border-2 border-[#FFD700] rounded-[18px] p-6 lg:p-8"
           >
             {submittedRef ? (
               <div className="text-center py-4">
-                <div className="inline-flex w-14 h-14 rounded-full bg-[#D7FF3B]/20 items-center justify-center mb-4">
-                  <CheckCircle className="w-8 h-8 text-[#D7FF3B]" />
+                <div className="inline-flex w-14 h-14 rounded-full bg-[#FFD700]/20 items-center justify-center mb-4">
+                  <CheckCircle className="w-8 h-8 text-[#FFD700]" />
                 </div>
                 <h3 className="font-['Space_Grotesk'] text-xl font-semibold text-[#F4F6FA] mb-2">
                   Request received
@@ -285,7 +285,7 @@ export default function RepairSection() {
                 <p className="text-[#A8ACB8] text-sm mb-4">
                   We&apos;ll contact you soon with a quote. Keep this reference for your records.
                 </p>
-                <p className="font-mono text-lg font-bold text-[#D7FF3B] mb-6">
+                <p className="font-mono text-lg font-bold text-[#FFD700] mb-6">
                   {submittedRef}
                 </p>
                 {submittedResponse ? (
@@ -332,7 +332,7 @@ export default function RepairSection() {
                         setFormData({ ...formData, name: e.target.value })
                       }
                       placeholder="Full name"
-                      className="w-full px-4 py-3 bg-[#1a1c22] border border-[#2a2d35] rounded-xl text-[#F4F6FA] placeholder:text-[#5a5d65] focus:border-[#D7FF3B] focus:outline-none transition-colors"
+                      className="w-full px-4 py-3 bg-[#1a1c22] border border-[#2a2d35] rounded-xl text-[#F4F6FA] placeholder:text-[#5a5d65] focus:border-[#FFD700] focus:outline-none transition-colors"
                     />
                   </div>
 
@@ -352,7 +352,7 @@ export default function RepairSection() {
                   onChange={(e) =>
                     setFormData({ ...formData, device: e.target.value })
                   }
-                  className="w-full px-4 py-3 bg-[#1a1c22] border border-[#2a2d35] rounded-xl text-[#F4F6FA] focus:border-[#D7FF3B] focus:outline-none transition-colors"
+                  className="w-full px-4 py-3 bg-[#1a1c22] border border-[#2a2d35] rounded-xl text-[#F4F6FA] focus:border-[#FFD700] focus:outline-none transition-colors"
                 >
                   <option value="">Select device</option>
                   <option value="phone">Smartphone</option>
@@ -374,7 +374,7 @@ export default function RepairSection() {
                   }
                   placeholder="Describe the problem..."
                   rows={3}
-                  className="w-full px-4 py-3 bg-[#1a1c22] border border-[#2a2d35] rounded-xl text-[#F4F6FA] placeholder:text-[#5a5d65] focus:border-[#D7FF3B] focus:outline-none transition-colors resize-none"
+                  className="w-full px-4 py-3 bg-[#1a1c22] border border-[#2a2d35] rounded-xl text-[#F4F6FA] placeholder:text-[#5a5d65] focus:border-[#FFD700] focus:outline-none transition-colors resize-none"
                 />
               </div>
 
@@ -389,7 +389,7 @@ export default function RepairSection() {
                     setFormData({ ...formData, contact: e.target.value })
                   }
                   placeholder="your@email.com"
-                  className="w-full px-4 py-3 bg-[#1a1c22] border border-[#2a2d35] rounded-xl text-[#F4F6FA] placeholder:text-[#5a5d65] focus:border-[#D7FF3B] focus:outline-none transition-colors"
+                  className="w-full px-4 py-3 bg-[#1a1c22] border border-[#2a2d35] rounded-xl text-[#F4F6FA] placeholder:text-[#5a5d65] focus:border-[#FFD700] focus:outline-none transition-colors"
                 />
               </div>
 
@@ -399,7 +399,7 @@ export default function RepairSection() {
 
                   <button
                     type="submit"
-                    className="group w-full flex items-center justify-center gap-2 px-6 py-4 bg-[#D7FF3B] text-[#0B0C0F] font-medium rounded-full hover:bg-[#e0ff5c] transition-colors mt-2"
+                    className="group w-full flex items-center justify-center gap-2 px-6 py-4 bg-[#FFD700] text-[#070A15] font-medium rounded-full hover:bg-[#ffe44d] transition-colors mt-2"
                   >
                     Get a quote
                     <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -415,7 +415,7 @@ export default function RepairSection() {
                       value={lookupRef}
                       onChange={(e) => setLookupRef(e.target.value)}
                       placeholder="Enter reference (e.g. REP-1234567890)"
-                      className="w-full px-4 py-3 bg-[#1a1c22] border border-[#2a2d35] rounded-xl text-[#F4F6FA] placeholder:text-[#5a5d65] focus:border-[#D7FF3B] focus:outline-none transition-colors"
+                      className="w-full px-4 py-3 bg-[#1a1c22] border border-[#2a2d35] rounded-xl text-[#F4F6FA] placeholder:text-[#5a5d65] focus:border-[#FFD700] focus:outline-none transition-colors"
                     />
                     {lookupError && <p className="text-sm text-[#A8ACB8]">{lookupError}</p>}
                     {lookupResult && (
