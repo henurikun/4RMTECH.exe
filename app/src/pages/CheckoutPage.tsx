@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CheckCircle, CreditCard, Truck } from 'lucide-react';
+import { ArrowLeft, CheckCircle, CreditCard, Truck, ClipboardCheck } from 'lucide-react';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
 
 const ORDERS_STORAGE_KEY = '4rmtech_orders';
 
@@ -10,18 +11,19 @@ type PaymentMethod = 'cod' | 'gcash';
 interface Order {
   id: string;
   createdAt: number;
+  userId: string | null;
   customer: {
     name: string;
     email: string;
     phone: string;
     address: string;
   };
-  paymentMethod: PaymentMethod;
+  paymentMethod: PaymentMethod | null;
   items: { productId: string; quantity: number; price: number }[];
   subtotal: number;
   shipping: number;
   total: number;
-  status: 'paid' | 'pending';
+  status: 'paid' | 'pending' | 'unpaid';
 }
 
 const formatCurrency = (amount: number) =>
@@ -42,9 +44,35 @@ function saveOrder(order: Order) {
   }
 }
 
+function updateOrder(id: string, patch: Partial<Order>) {
+  try {
+    const raw = window.localStorage.getItem(ORDERS_STORAGE_KEY);
+    const list: Order[] = raw ? JSON.parse(raw) : [];
+    const next = list.map((o) => (o.id === id ? { ...o, ...patch } : o));
+    window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
+function isMobileUA() {
+  if (typeof navigator === 'undefined') return false;
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+function getPlatform() {
+  if (typeof navigator === 'undefined') return 'other' as const;
+  const ua = navigator.userAgent;
+  if (/Android/i.test(ua)) return 'android' as const;
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'ios' as const;
+  return 'other' as const;
+}
+
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const { items, getProduct, subtotal, clearCart } = useCart();
+  const { user } = useAuth();
+  const [step, setStep] = useState<'details' | 'place' | 'payment' | 'done'>('details');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cod');
   const [form, setForm] = useState({
     name: '',
@@ -54,9 +82,47 @@ export default function CheckoutPage() {
   });
   const [error, setError] = useState('');
   const [successOrderId, setSuccessOrderId] = useState<string | null>(null);
+  const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
 
   const shipping = useMemo(() => (subtotal > 0 ? 99 : 0), [subtotal]);
   const total = useMemo(() => subtotal + shipping, [subtotal, shipping]);
+
+  if (!user) {
+    return (
+      <div className="min-h-screen">
+        <header className="sticky top-0 z-50 bg-[#070A15]/85 backdrop-blur-md border-b border-white/10">
+          <div className="flex items-center justify-between px-6 lg:px-12 py-4">
+            <Link
+              to="/cart"
+              className="flex items-center gap-2 text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              Back to cart
+            </Link>
+            <h1 className="font-['Space_Grotesk'] text-xl font-bold text-[#F4F6FA]">Checkout</h1>
+            <span />
+          </div>
+        </header>
+        <main className="px-6 lg:px-12 py-24">
+          <div className="max-w-xl mx-auto rounded-3xl bg-[#111318] border border-white/5 p-8 text-center">
+            <h2 className="font-['Space_Grotesk'] text-2xl font-bold text-[#F4F6FA] mb-2">
+              Please login first
+            </h2>
+            <p className="text-[#A8ACB8] mb-6">
+              Your orders and shopping cart will be saved under your account.
+            </p>
+            <Link
+              to="/login"
+              state={{ from: '/checkout' }}
+              className="inline-flex items-center justify-center px-8 py-4 bg-[#FFD700] text-[#070A15] font-semibold rounded-full hover:bg-[#ffe44d] transition-colors"
+            >
+              Go to login
+            </Link>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   if (items.length === 0 && !successOrderId) {
     return (
@@ -90,7 +156,7 @@ export default function CheckoutPage() {
     );
   }
 
-  const placeOrder = (e: React.FormEvent) => {
+  const continueToPlaceOrder = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -104,12 +170,31 @@ export default function CheckoutPage() {
       return;
     }
 
+    setStep('place');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const placeOrderNow = () => {
+    setError('');
+
+    const name = form.name.trim();
+    const email = form.email.trim();
+    const phone = form.phone.trim();
+    const address = form.address.trim();
+
+    if (!name || !email || !phone || !address) {
+      setError('Please complete shipping details.');
+      setStep('details');
+      return;
+    }
+
     const id = `ORD-${Date.now()}`;
     const order: Order = {
       id,
       createdAt: Date.now(),
+      userId: user.id,
       customer: { name, email, phone, address },
-      paymentMethod,
+      paymentMethod: null,
       items: items
         .map((i) => {
           const p = getProduct(i.productId);
@@ -120,19 +205,30 @@ export default function CheckoutPage() {
       subtotal,
       shipping,
       total,
-      status: 'pending',
+      status: 'unpaid',
     };
 
     saveOrder(order);
     clearCart();
-    setSuccessOrderId(id);
+    setPlacedOrderId(id);
+    setStep('payment');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const finalizePayment = (method: PaymentMethod) => {
+    if (!placedOrderId) return;
+    const status = method === 'cod' ? 'pending' : 'paid';
+    updateOrder(placedOrderId, { paymentMethod: method, status });
+    setPaymentMethod(method);
+    setSuccessOrderId(placedOrderId);
+    setStep('done');
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     // optional: navigate user after a moment
     setTimeout(() => navigate('/'), 1200);
   };
 
-  if (successOrderId) {
+  if (step === 'done' && successOrderId) {
     return (
       <div className="min-h-screen">
         <main className="px-6 lg:px-12 py-24">
@@ -181,100 +277,214 @@ export default function CheckoutPage() {
 
       <main className="px-6 lg:px-12 py-8">
         <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-5 gap-8">
-          <form onSubmit={placeOrder} className="lg:col-span-3 space-y-6">
-            <section className="rounded-3xl bg-[#111318] border border-white/5 p-6">
-              <h2 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA] mb-4 flex items-center gap-2">
-                <Truck className="w-5 h-5 text-[#FFD700]" />
-                Shipping details
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <input
-                  value={form.name}
-                  onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                  placeholder="Full name"
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700]"
-                />
-                <input
-                  value={form.phone}
-                  onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-                  placeholder="Phone"
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700]"
-                />
-                <input
-                  value={form.email}
-                  onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-                  placeholder="Email"
-                  type="email"
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700] sm:col-span-2"
-                />
-                <textarea
-                  value={form.address}
-                  onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
-                  placeholder="Delivery address"
-                  rows={3}
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700] sm:col-span-2 resize-none"
-                />
-              </div>
-            </section>
+          <div className="lg:col-span-3 space-y-6">
+            <div className="flex flex-wrap gap-2">
+              <span className={`px-4 py-2 rounded-full text-sm font-medium ${step === 'details' ? 'bg-[#FFD700] text-[#070A15]' : 'bg-white/5 text-[#A8ACB8]'}`}>
+                1) Details
+              </span>
+              <span className={`px-4 py-2 rounded-full text-sm font-medium ${step === 'place' ? 'bg-[#FFD700] text-[#070A15]' : 'bg-white/5 text-[#A8ACB8]'}`}>
+                2) Place order
+              </span>
+              <span className={`px-4 py-2 rounded-full text-sm font-medium ${step === 'payment' ? 'bg-[#FFD700] text-[#070A15]' : 'bg-white/5 text-[#A8ACB8]'}`}>
+                3) Payment options
+              </span>
+            </div>
 
-            <section className="rounded-3xl bg-[#111318] border border-white/5 p-6">
-              <h2 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA] mb-4 flex items-center gap-2">
-                <CreditCard className="w-5 h-5 text-[#FFD700]" />
-                Payment
-              </h2>
-              <div className="flex flex-wrap gap-2 mb-4">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('cod')}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                    paymentMethod === 'cod'
-                      ? 'bg-[#FFD700] text-[#070A15]'
-                      : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
-                  }`}
-                >
-                  Cash on delivery
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('gcash')}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                    paymentMethod === 'gcash'
-                      ? 'bg-[#FFD700] text-[#070A15]'
-                      : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
-                  }`}
-                >
-                  GCash (QR)
-                </button>
-              </div>
-
-              {paymentMethod === 'gcash' && (
-                <div className="space-y-4">
-                  <p className="text-sm text-[#A8ACB8]">
-                    Scan this QR using your GCash app, then tap “Place order”. This is a demo
-                    checkout – we don&apos;t verify the payment automatically.
-                  </p>
-                  <div className="flex items-center justify-center">
-                    <div className="rounded-2xl bg-white p-3 shadow-lg max-w-xs w-full">
-                      <img
-                        src="/images/gcash-qr.png"
-                        alt="GCash payment QR code"
-                        className="w-full h-auto object-contain"
-                      />
-                    </div>
+            {step === 'details' && (
+              <form onSubmit={continueToPlaceOrder} className="space-y-6">
+                <section className="rounded-3xl bg-[#111318] border border-white/5 p-6">
+                  <h2 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA] mb-4 flex items-center gap-2">
+                    <Truck className="w-5 h-5 text-[#FFD700]" />
+                    Shipping details
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <input
+                      value={form.name}
+                      onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                      placeholder="Full name"
+                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700]"
+                    />
+                    <input
+                      value={form.phone}
+                      onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
+                      placeholder="Phone"
+                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700]"
+                    />
+                    <input
+                      value={form.email}
+                      onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                      placeholder="Email"
+                      type="email"
+                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700] sm:col-span-2"
+                    />
+                    <textarea
+                      value={form.address}
+                      onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
+                      placeholder="Delivery address"
+                      rows={3}
+                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700] sm:col-span-2 resize-none"
+                    />
                   </div>
+                </section>
+
+                {error && <p className="text-sm text-red-400">{error}</p>}
+
+                <button
+                  type="submit"
+                  className="w-full px-8 py-4 bg-[#FFD700] text-[#070A15] font-semibold rounded-full hover:bg-[#ffe44d] transition-colors"
+                >
+                  Continue
+                </button>
+              </form>
+            )}
+
+            {step === 'place' && (
+              <section className="rounded-3xl bg-[#111318] border border-white/5 p-6 space-y-5">
+                <h2 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA] flex items-center gap-2">
+                  <ClipboardCheck className="w-5 h-5 text-[#FFD700]" />
+                  Review & place order
+                </h2>
+                <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
+                  <p className="text-xs text-[#A8ACB8] mb-2">Ship to</p>
+                  <p className="text-sm text-[#F4F6FA]">{form.name}</p>
+                  <p className="text-sm text-[#A8ACB8]">{form.phone} • {form.email}</p>
+                  <p className="text-sm text-[#A8ACB8] mt-2 whitespace-pre-wrap">{form.address}</p>
                 </div>
-              )}
-            </section>
 
-            {error && <p className="text-sm text-red-400">{error}</p>}
+                {error && <p className="text-sm text-red-400">{error}</p>}
 
-            <button
-              type="submit"
-            className="w-full px-8 py-4 bg-[#FFD700] text-[#070A15] font-semibold rounded-full hover:bg-[#ffe44d] transition-colors"
-            >
-              Place order ({formatCurrency(total)})
-            </button>
-          </form>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setStep('details')}
+                    className="px-8 py-4 rounded-full bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA] transition-colors"
+                  >
+                    Edit details
+                  </button>
+                  <button
+                    type="button"
+                    onClick={placeOrderNow}
+                    className="flex-1 px-8 py-4 rounded-full bg-[#FFD700] text-[#070A15] font-semibold hover:bg-[#ffe44d] transition-colors"
+                  >
+                    Place order ({formatCurrency(total)})
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {step === 'payment' && placedOrderId && (
+              <section className="rounded-3xl bg-[#111318] border border-white/5 p-6 space-y-5">
+                <h2 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA] flex items-center gap-2">
+                  <CreditCard className="w-5 h-5 text-[#FFD700]" />
+                  Payment options
+                </h2>
+
+                <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
+                  <p className="text-xs text-[#A8ACB8] mb-2">Order reference</p>
+                  <p className="font-mono text-[#F4F6FA]">{placedOrderId}</p>
+                  <p className="text-sm text-[#A8ACB8] mt-3">
+                    Amount due: <span className="text-[#FFD700] font-semibold">{formatCurrency(total)}</span>
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('cod')}
+                    className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                      paymentMethod === 'cod'
+                        ? 'bg-[#FFD700] text-[#070A15]'
+                        : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
+                    }`}
+                  >
+                    Cash on delivery
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('gcash')}
+                    className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                      paymentMethod === 'gcash'
+                        ? 'bg-[#FFD700] text-[#070A15]'
+                        : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
+                    }`}
+                  >
+                    GCash
+                  </button>
+                </div>
+
+                {paymentMethod === 'cod' ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-[#A8ACB8]">
+                      Pay the rider upon delivery. Your order will be marked as pending.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => finalizePayment('cod')}
+                      className="w-full px-8 py-4 rounded-full bg-[#FFD700] text-[#070A15] font-semibold hover:bg-[#ffe44d] transition-colors"
+                    >
+                      Confirm COD
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="text-sm text-[#A8ACB8]">
+                      On mobile, tap the button below to open GCash. You can also scan the QR.
+                      This demo checkout does not verify payments automatically.
+                    </p>
+
+                    <div className="flex items-center justify-center">
+                      <div className="rounded-2xl bg-white p-3 shadow-lg max-w-xs w-full">
+                        <img
+                          src="/images/gcash-qr.png"
+                          alt="GCash payment QR code"
+                          className="w-full h-auto object-contain"
+                        />
+                      </div>
+                    </div>
+
+                    {isMobileUA() && (
+                      <a
+                        href="gcash://app"
+                        className="block w-full text-center px-8 py-4 rounded-full bg-[#00AEEF] text-white font-semibold hover:opacity-90 transition-opacity"
+                      >
+                        Open GCash
+                      </a>
+                    )}
+
+                    {getPlatform() === 'android' && (
+                      <a
+                        href="https://play.google.com/store/apps/details?id=com.globe.gcash.android"
+                        className="block w-full text-center px-8 py-4 rounded-full bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA] transition-colors"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Install GCash (Android)
+                      </a>
+                    )}
+
+                    {getPlatform() === 'ios' && (
+                      <a
+                        href="https://apps.apple.com/ph/app/gcash/id520020791"
+                        className="block w-full text-center px-8 py-4 rounded-full bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA] transition-colors"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Install GCash (iOS)
+                      </a>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => finalizePayment('gcash')}
+                      className="w-full px-8 py-4 rounded-full bg-[#FFD700] text-[#070A15] font-semibold hover:bg-[#ffe44d] transition-colors"
+                    >
+                      I have paid
+                    </button>
+                  </div>
+                )}
+              </section>
+            )}
+          </div>
 
           <aside className="lg:col-span-2 space-y-4">
             <div className="rounded-3xl bg-[#111318] border border-white/5 p-6">
@@ -317,7 +527,7 @@ export default function CheckoutPage() {
             </div>
 
             <p className="text-xs text-[#6B7280]">
-              Demo checkout: orders are stored in your browser localStorage.
+              Demo checkout: orders are stored in your browser localStorage under your logged-in account.
             </p>
           </aside>
         </div>

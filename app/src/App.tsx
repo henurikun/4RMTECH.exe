@@ -9,6 +9,7 @@ import PCBuilderPage from './pages/PCBuilderPage';
 import AdminPage from './pages/AdminPage';
 import CartPage from './pages/CartPage';
 import CheckoutPage from './pages/CheckoutPage';
+import LoginPage from './pages/LoginPage';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -42,6 +43,7 @@ function App() {
         {/* Routes */}
         <Routes>
           <Route path="/" element={<><Navigation /><HomePage /></>} />
+          <Route path="/login" element={<LoginPage />} />
           <Route path="/category/:category" element={<ProductListingPage />} />
           <Route path="/pc-builder" element={<PCBuilderPage />} />
           <Route path="/admin" element={<AdminPage />} />

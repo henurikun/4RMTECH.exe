@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, ShoppingCart, Cpu, Search } from 'lucide-react';
+import { Menu, X, ShoppingCart, Cpu, Search, User, LogOut } from 'lucide-react';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
 
 export default function Navigation() {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -12,6 +13,7 @@ export default function Navigation() {
   const navigate = useNavigate();
   const location = useLocation();
   const { totalItems } = useCart();
+  const { user, logout } = useAuth();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -165,6 +167,28 @@ export default function Navigation() {
               <span className="font-mono text-xs">({totalItems})</span>
             </Link>
 
+            {!user ? (
+              <Link
+                to="/login"
+                state={{ from: location.pathname + location.search }}
+                className="hidden md:flex items-center gap-2 text-sm text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors"
+                aria-label="Login"
+              >
+                <User className="w-4 h-4" />
+                <span>Login</span>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => logout()}
+                className="hidden md:flex items-center gap-2 text-sm text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors"
+                aria-label="Logout"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="max-w-[10rem] truncate">{user.name}</span>
+              </button>
+            )}
+
             {/* Mobile menu button */}
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -253,6 +277,30 @@ export default function Navigation() {
             <ShoppingCart className="w-5 h-5" />
             <span className="font-mono text-sm">Cart ({totalItems})</span>
           </Link>
+
+          {!user ? (
+            <Link
+              to="/login"
+              state={{ from: location.pathname + location.search }}
+              onClick={() => setIsMenuOpen(false)}
+              className="flex items-center gap-3 text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors"
+            >
+              <User className="w-5 h-5" />
+              <span className="font-mono text-sm">Login</span>
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                logout();
+                setIsMenuOpen(false);
+              }}
+              className="flex items-center gap-3 text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors"
+            >
+              <LogOut className="w-5 h-5" />
+              <span className="font-mono text-sm">Logout</span>
+            </button>
+          )}
         </div>
       </div>
     </>

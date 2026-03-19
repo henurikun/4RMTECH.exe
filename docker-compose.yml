@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:16
+    container_name: 4rmtech_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: 4rmtech
+      POSTGRES_PASSWORD: 4rmtech_password
+      POSTGRES_DB: 4rmtech
+    ports:
+      - "5432:5432"
+    volumes:
+      - 4rmtech_pgdata:/var/lib/postgresql/data
+
+volumes:
+  4rmtech_pgdata:
+
