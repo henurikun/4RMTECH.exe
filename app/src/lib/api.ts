@@ -67,17 +67,25 @@ export const api = {
       request<{ items: { id: string; productId: string; quantity: number; product: any }[] }>(
         '/api/cart'
       ),
-    add: (input: { productId: string; quantity?: number }) =>
-      request<{ id: string; productId: string; quantity: number; product: any }>('/api/cart/items', {
+    add: (input: {
+      productId: string;
+      quantity?: number;
+      product?: { name: string; category: string; price: number; image?: string; description?: string };
+    }) =>
+      request<{ id: string; productId: string; quantity: number; product: any }>(
+        '/api/cart/items',
+        {
         method: 'POST',
-        body: JSON.stringify(input),
-      }),
+          body: JSON.stringify(input),
+        }
+      ),
     update: (id: string, input: { quantity: number }) =>
       request<{ id: string; productId: string; quantity: number; product: any }>(
         `/api/cart/items/${id}`,
         { method: 'PATCH', body: JSON.stringify(input) }
       ),
     remove: (id: string) => request<{ ok: true }>(`/api/cart/items/${id}`, { method: 'DELETE' }),
+    clear: () => request<{ ok: true }>(`/api/cart`, { method: 'DELETE' }),
   },
   checkout: {
     placeOrder: (input: { customer: { name: string; email: string; phone: string; address: string } }) =>

@@ -3,28 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, CreditCard, Truck, ClipboardCheck } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
-
-const ORDERS_STORAGE_KEY = '4rmtech_orders';
+import { api } from '../lib/api';
 
 type PaymentMethod = 'cod' | 'gcash';
-
-interface Order {
-  id: string;
-  createdAt: number;
-  userId: string | null;
-  customer: {
-    name: string;
-    email: string;
-    phone: string;
-    address: string;
-  };
-  paymentMethod: PaymentMethod | null;
-  items: { productId: string; quantity: number; price: number }[];
-  subtotal: number;
-  shipping: number;
-  total: number;
-  status: 'paid' | 'pending' | 'unpaid';
-}
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-PH', {
@@ -32,28 +13,6 @@ const formatCurrency = (amount: number) =>
     currency: 'PHP',
     maximumFractionDigits: 0,
   }).format(amount);
-
-function saveOrder(order: Order) {
-  try {
-    const raw = window.localStorage.getItem(ORDERS_STORAGE_KEY);
-    const list: Order[] = raw ? JSON.parse(raw) : [];
-    list.unshift(order);
-    window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(list));
-  } catch {
-    // ignore
-  }
-}
-
-function updateOrder(id: string, patch: Partial<Order>) {
-  try {
-    const raw = window.localStorage.getItem(ORDERS_STORAGE_KEY);
-    const list: Order[] = raw ? JSON.parse(raw) : [];
-    const next = list.map((o) => (o.id === id ? { ...o, ...patch } : o));
-    window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
-}
 
 function isMobileUA() {
   if (typeof navigator === 'undefined') return false;
@@ -83,6 +42,7 @@ export default function CheckoutPage() {
   const [error, setError] = useState('');
   const [successOrderId, setSuccessOrderId] = useState<string | null>(null);
   const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
+  const [orderNumber, setOrderNumber] = useState<string | null>(null);
 
   const shipping = useMemo(() => (subtotal > 0 ? 99 : 0), [subtotal]);
   const total = useMemo(() => subtotal + shipping, [subtotal, shipping]);
@@ -188,44 +148,37 @@ export default function CheckoutPage() {
       return;
     }
 
-    const id = `ORD-${Date.now()}`;
-    const order: Order = {
-      id,
-      createdAt: Date.now(),
-      userId: user.id,
-      customer: { name, email, phone, address },
-      paymentMethod: null,
-      items: items
-        .map((i) => {
-          const p = getProduct(i.productId);
-          if (!p) return null;
-          return { productId: i.productId, quantity: i.quantity, price: p.price };
-        })
-        .filter(Boolean) as Order['items'],
-      subtotal,
-      shipping,
-      total,
-      status: 'unpaid',
-    };
-
-    saveOrder(order);
-    clearCart();
-    setPlacedOrderId(id);
-    setStep('payment');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    api.checkout
+      .placeOrder({ customer: { name, email, phone, address } })
+      .then((res) => {
+        const order = res.order;
+        setPlacedOrderId(order.id);
+        setOrderNumber(order.orderNumber);
+        clearCart();
+        setStep('payment');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      })
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : 'Failed to place order.');
+      });
   };
 
   const finalizePayment = (method: PaymentMethod) => {
     if (!placedOrderId) return;
-    const status = method === 'cod' ? 'pending' : 'paid';
-    updateOrder(placedOrderId, { paymentMethod: method, status });
-    setPaymentMethod(method);
-    setSuccessOrderId(placedOrderId);
-    setStep('done');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-
-    // optional: navigate user after a moment
-    setTimeout(() => navigate('/'), 1200);
+    setError('');
+    const provider = method === 'cod' ? 'COD' : 'GCASH';
+    api.checkout
+      .createPayment(placedOrderId, { provider })
+      .then(() => {
+        setPaymentMethod(method);
+        setSuccessOrderId(orderNumber ?? 'Order placed');
+        setStep('done');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setTimeout(() => navigate('/'), 1200);
+      })
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : 'Failed to confirm payment.');
+      });
   };
 
   if (step === 'done' && successOrderId) {
@@ -381,7 +334,7 @@ export default function CheckoutPage() {
 
                 <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
                   <p className="text-xs text-[#A8ACB8] mb-2">Order reference</p>
-                  <p className="font-mono text-[#F4F6FA]">{placedOrderId}</p>
+                  <p className="font-mono text-[#F4F6FA]">{orderNumber ?? placedOrderId}</p>
                   <p className="text-sm text-[#A8ACB8] mt-3">
                     Amount due: <span className="text-[#FFD700] font-semibold">{formatCurrency(total)}</span>
                   </p>

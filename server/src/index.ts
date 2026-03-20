@@ -103,17 +103,49 @@ app.post('/api/cart/items', requireAuth, async (req: AuthedRequest, res) => {
   const schema = z.object({
     productId: z.string().min(1),
     quantity: z.number().int().min(1).max(999).default(1),
+    // Optional product details so the frontend can add items even if the product
+    // record isn't seeded yet (e.g., PC Builder "extras" or component carts).
+    product: z
+      .object({
+        name: z.string().min(1),
+        category: z.string().min(1),
+        price: z.number().nonnegative(),
+        image: z.string().optional(),
+        description: z.string().optional(),
+      })
+      .optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
 
-  const { productId, quantity } = parsed.data;
+  const { productId, quantity, product: productInput } = parsed.data;
 
   const cart = await prisma.cart.upsert({
     where: { userId },
     update: {},
     create: { userId },
   });
+
+  // Ensure the product exists (create it from optional input when needed).
+  const existingProduct = await prisma.product.findUnique({ where: { id: productId } });
+  if (!existingProduct) {
+    if (!productInput) {
+      res.status(400).json({ error: 'Product not found and no product details provided.' });
+      return;
+    }
+
+    await prisma.product.create({
+      data: {
+        id: productId,
+        name: productInput.name,
+        category: productInput.category,
+        description: productInput.description ?? 'No description.',
+        imageUrl: productInput.image,
+        priceCents: Math.round(productInput.price * 100),
+        inStock: true,
+      },
+    });
+  }
 
   const item = await prisma.cartItem.upsert({
     where: { cartId_productId: { cartId: cart.id, productId } },
@@ -128,6 +160,15 @@ app.post('/api/cart/items', requireAuth, async (req: AuthedRequest, res) => {
     quantity: item.quantity,
     product: item.product,
   });
+});
+
+app.delete('/api/cart', requireAuth, async (req: AuthedRequest, res) => {
+  const userId = req.auth!.userId;
+  const cart = await prisma.cart.findUnique({ where: { userId }, select: { id: true } });
+  if (!cart) return res.json({ ok: true });
+
+  await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
+  return res.json({ ok: true });
 });
 
 app.patch('/api/cart/items/:id', requireAuth, async (req: AuthedRequest, res) => {
@@ -242,18 +283,31 @@ app.post('/api/orders/:orderId/payment', requireAuth, async (req: AuthedRequest,
   const order = await prisma.order.findUnique({ where: { id: String(req.params.orderId) } });
   if (!order || order.userId !== userId) return res.status(404).json({ error: 'Not found' });
 
-  const payment = await prisma.payment.create({
-    data: {
-      orderId: order.id,
-      provider: parsed.data.provider,
-      status: parsed.data.provider === 'COD' ? 'PENDING' : 'INITIATED',
-      amountCents: order.totalCents,
-      currency: order.currency,
-      reference: parsed.data.reference,
-    },
+  const payment = await prisma.$transaction(async (tx) => {
+    const paymentCreated = await tx.payment.create({
+      data: {
+        orderId: order.id,
+        provider: parsed.data.provider,
+        // Demo behavior: mark non-COD payments as PAID immediately.
+        status: parsed.data.provider === 'COD' ? 'PENDING' : 'PAID',
+        amountCents: order.totalCents,
+        currency: order.currency,
+        reference: parsed.data.reference,
+      },
+    });
+
+    if (parsed.data.provider === 'COD') {
+      return paymentCreated;
+    }
+
+    await tx.order.update({
+      where: { id: order.id },
+      data: { status: 'PAID' },
+    });
+
+    return paymentCreated;
   });
 
-  // For COD we keep order PENDING. For GCash/Card, you'd integrate a gateway webhook to set PAID.
   return res.json({ payment });
 });
 
