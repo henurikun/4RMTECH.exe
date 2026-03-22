@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { allProducts, type Product } from '../data/products';
-import { Link } from 'react-router-dom';
-import { ClipboardList, Filter, MessageSquare, Plus, Pencil, Trash2, X, ArrowLeft, Package } from 'lucide-react';
-import { ADMIN_PASSWORD } from '../config/adminAuth';
+import type { Product } from '../data/products';
+import { Link, useNavigate } from 'react-router-dom';
+import { ClipboardList, Filter, MessageSquare, Plus, Pencil, Trash2, X, ArrowLeft, Package, Inbox } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useCatalog } from '../context/CatalogContext';
+import { api } from '../lib/api';
 
 type Mode = 'all' | 'laptops' | 'wearables' | 'audio' | 'cameras' | 'consoles' | 'devices';
-type Panel = 'products' | 'repairs';
+type Panel = 'products' | 'inbox';
+type InboxTab = 'invoices' | 'repairs';
 
 type RepairStatus = 'new' | 'quoted' | 'scheduled' | 'in_progress' | 'done';
 
@@ -66,7 +69,7 @@ interface FormState {
   originalPrice: string;
   image: string;
   badge: string;
-  inStock: boolean;
+  stockQuantity: string;
   description: string;
   specsText: string;
 }
@@ -79,7 +82,7 @@ const emptyForm: FormState = {
   originalPrice: '',
   image: '',
   badge: '',
-  inStock: true,
+  stockQuantity: '0',
   description: '',
   specsText: '',
 };
@@ -93,7 +96,7 @@ function productToFormState(product: Product): FormState {
     originalPrice: product.originalPrice ? String(product.originalPrice) : '',
     image: product.image,
     badge: product.badge ?? '',
-    inStock: product.inStock,
+    stockQuantity: String(product.stockQuantity ?? 0),
     description: product.description,
     specsText: Object.entries(product.specs)
       .map(([key, value]) => `${key}: ${value}`)
@@ -116,6 +119,7 @@ function formStateToProduct(form: FormState): Product {
       }
     });
 
+  const stockQty = Math.max(0, Math.floor(Number(form.stockQuantity) || 0));
   return {
     id: form.id || crypto.randomUUID(),
     name: form.name,
@@ -126,21 +130,25 @@ function formStateToProduct(form: FormState): Product {
     specs,
     description: form.description,
     badge: form.badge || undefined,
-    inStock: form.inStock,
+    inStock: stockQty > 0,
+    stockQuantity: stockQty,
   };
 }
 
 export default function AdminPage() {
-  const [products, setProducts] = useState<Product[]>(() => [...allProducts]);
+  const { user, refreshUser } = useAuth();
+  const navigate = useNavigate();
+  const { products, refetch } = useCatalog();
   const [mode, setMode] = useState<Mode>('all');
   const [panel, setPanel] = useState<Panel>('products');
+  const [inboxTab, setInboxTab] = useState<InboxTab>('invoices');
+  const [firestoreOrders, setFirestoreOrders] = useState<Record<string, unknown>[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [formState, setFormState] = useState<FormState>(emptyForm);
-  const [isAuthed, setIsAuthed] = useState(false);
-  const [showLogin, setShowLogin] = useState(false);
-  const [password, setPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const [repairs, setRepairs] = useState<RepairRequest[]>([]);
   const [repairResponses, setRepairResponses] = useState<Record<string, RepairResponse>>({});
@@ -151,18 +159,30 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const stored = window.localStorage.getItem('4rmtech_admin');
-    if (stored === 'true') {
-      setIsAuthed(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
     const list = loadRepairs();
     setRepairs(list);
     setRepairResponses(loadRepairResponses());
   }, []);
+
+  useEffect(() => {
+    if (panel !== 'inbox' || inboxTab !== 'invoices') return;
+    let cancelled = false;
+    setOrdersLoading(true);
+    api.admin
+      .firestoreOrders()
+      .then((rows) => {
+        if (!cancelled) setFirestoreOrders(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setFirestoreOrders([]);
+      })
+      .finally(() => {
+        if (!cancelled) setOrdersLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [panel, inboxTab]);
 
   useEffect(() => {
     if (!selectedRepairId) return;
@@ -197,13 +217,22 @@ export default function AdminPage() {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
-    const target = products.find(p => p.id === id);
+  const handleDelete = async (id: string) => {
+    const target = products.find((p) => p.id === id);
     const confirmed = window.confirm(
-      `Delete "${target?.name ?? 'this product'}"? This cannot be undone in this session.`
+      `Delete "${target?.name ?? 'this product'}"? This removes it from the database.`
     );
     if (!confirmed) return;
-    setProducts(prev => prev.filter(p => p.id !== id));
+    setSaving(true);
+    setSaveError('');
+    try {
+      await api.admin.deleteProduct(id);
+      await refetch();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveRepairReply = () => {
@@ -220,7 +249,7 @@ export default function AdminPage() {
     setTimeout(() => setReplySaved(''), 1200);
   };
 
-  const handleChange = (field: keyof FormState, value: string | boolean) => {
+  const handleChange = (field: keyof FormState, value: string) => {
     setFormState(prev => ({
       ...prev,
       [field]: value,
@@ -243,110 +272,74 @@ export default function AdminPage() {
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     const product = formStateToProduct(formState);
-
-    setProducts(prev => {
-      const exists = prev.some(p => p.id === product.id);
-      if (exists) {
-        return prev.map(p => (p.id === product.id ? product : p));
+    setSaving(true);
+    setSaveError('');
+    try {
+      const payload = {
+        name: product.name,
+        category: product.category,
+        description: product.description,
+        price: product.price,
+        originalPrice: product.originalPrice ?? null,
+        imageUrl: product.image,
+        badge: product.badge ?? null,
+        inStock: product.inStock,
+        stockQuantity: product.stockQuantity ?? 0,
+        specs: Object.keys(product.specs).length ? product.specs : undefined,
+      };
+      if (editingId) {
+        await api.admin.updateProduct(editingId, payload);
+      } else {
+        await api.admin.createProduct({
+          ...payload,
+          ...(formState.id.trim() ? { id: formState.id.trim() } : {}),
+        });
       }
-      return [product, ...prev];
-    });
-
-    setShowForm(false);
-    setEditingId(null);
-  };
-
-  const handleLogin = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (password === ADMIN_PASSWORD) {
-      setIsAuthed(true);
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem('4rmtech_admin', 'true');
-      }
-      setShowLogin(false);
-      setPassword('');
-      setLoginError('');
-    } else {
-      setLoginError('Incorrect passcode.');
+      await refetch();
+      setShowForm(false);
+      setEditingId(null);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setSaving(false);
     }
   };
 
-  if (!isAuthed) {
+  if (!user) {
     return (
-      <div className="min-h-screen relative">
-        <div className="flex items-center justify-center h-screen px-6">
-          <div className="max-w-md text-center">
-            <p className="font-mono text-xs uppercase tracking-[0.18em] text-[#A8ACB8] mb-3">
-              Restricted Area
-            </p>
-            <h1 className="font-['Space_Grotesk'] text-2xl font-bold text-[#F4F6FA] mb-2">
-              4RMTECH Control Panel
-            </h1>
-            <p className="text-sm text-[#6B7280]">
-              If you are not part of the 4RMTECH team, you can safely ignore this page.
-            </p>
-          </div>
+      <div className="min-h-screen flex items-center justify-center px-6">
+        <div className="max-w-md text-center space-y-4">
+          <h1 className="font-['Space_Grotesk'] text-2xl font-bold text-[#F4F6FA]">Admin</h1>
+          <p className="text-sm text-[#A8ACB8]">Sign in with an administrator account to manage products.</p>
+          <Link
+            to="/login"
+            state={{ from: '/admin' }}
+            className="inline-flex items-center justify-center px-6 py-3 bg-[#FFD700] text-[#070A15] font-semibold rounded-full hover:bg-[#ffe44d] transition-colors"
+          >
+            Go to login
+          </Link>
         </div>
+      </div>
+    );
+  }
 
-        {/* Suspicious login dot in the footer */}
-        <button
-          type="button"
-          onClick={() => setShowLogin(true)}
-          aria-label="Admin login"
-          className="fixed bottom-4 right-6 w-2 h-2 rounded-full bg-[#FFD700]/70 hover:bg-[#FFD700] transition-colors shadow-sm"
-        />
-
-        {showLogin && (
-          <div className="fixed inset-0 z-50 flex items-end justify-end pointer-events-none">
-            <div className="pointer-events-auto m-4 w-full max-w-xs rounded-2xl bg-[#070A15]/95 border border-white/10 p-4 shadow-xl">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-medium text-[#F4F6FA]">Admin Login</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowLogin(false);
-                    setPassword('');
-                    setLoginError('');
-                  }}
-                  className="w-6 h-6 rounded-full bg-white/5 hover:bg-white/10 text-[#F4F6FA] flex items-center justify-center text-xs"
-                  aria-label="Close admin login"
-                >
-                  ×
-                </button>
-              </div>
-              <form onSubmit={handleLogin} className="space-y-2">
-                <div className="space-y-1">
-                  <label
-                    htmlFor="admin-passcode"
-                    className="text-[11px] font-medium text-[#A8ACB8]"
-                  >
-                    Passcode
-                  </label>
-                  <input
-                    id="admin-passcode"
-                    type="password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    autoComplete="off"
-                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
-                  />
-                </div>
-                {loginError && (
-                  <p className="text-[11px] text-red-400">{loginError}</p>
-                )}
-                <button
-                  type="submit"
-                  className="w-full mt-1 px-3 py-2 rounded-full bg-[#FFD700] text-[#070A15] text-xs font-semibold hover:bg-[#ffe44d] transition-colors"
-                >
-                  Enter
-                </button>
-              </form>
-            </div>
-          </div>
-        )}
+  if (user.role !== 'ADMIN') {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6">
+        <div className="max-w-md text-center space-y-4">
+          <h1 className="font-['Space_Grotesk'] text-2xl font-bold text-[#F4F6FA]">Access denied</h1>
+          <p className="text-sm text-[#A8ACB8]">This page is only available to admin accounts.</p>
+          <Link
+            to="/login"
+            state={{ from: '/admin' }}
+            className="inline-flex items-center justify-center px-6 py-3 bg-white/10 text-[#F4F6FA] font-medium rounded-full hover:bg-white/15 transition-colors"
+          >
+            Switch account
+          </Link>
+        </div>
       </div>
     );
   }
@@ -357,13 +350,17 @@ export default function AdminPage() {
       <header className="sticky top-0 z-40 bg-[#070A15]/85 backdrop-blur-md border-b border-white/10">
         <div className="flex flex-wrap items-center justify-between gap-4 px-6 lg:px-12 py-4">
           <div className="flex items-center gap-4">
-            <Link
-              to="/"
+            <button
+              type="button"
+              onClick={() => {
+                void refreshUser();
+                navigate('/');
+              }}
               className="inline-flex items-center gap-2 text-sm text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
               Back to site
-            </Link>
+            </button>
             <div className="h-4 w-px bg-white/10" />
             <div className="flex items-center gap-3">
               <div className="h-9 w-9 rounded-full bg-[#FFD700]/10 flex items-center justify-center text-[#FFD700] font-bold text-sm">
@@ -374,7 +371,7 @@ export default function AdminPage() {
                   Admin Product Manager
                 </h1>
                 <p className="text-xs text-[#A8ACB8]">
-                  Local-only CRUD for demo purposes (no database yet).
+                  Products are stored in PostgreSQL via the API.
                 </p>
               </div>
             </div>
@@ -395,15 +392,15 @@ export default function AdminPage() {
             </button>
             <button
               type="button"
-              onClick={() => setPanel('repairs')}
+              onClick={() => setPanel('inbox')}
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                panel === 'repairs'
+                panel === 'inbox'
                   ? 'bg-[#FFD700] text-[#070A15]'
                   : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
               }`}
             >
-              <ClipboardList className="w-4 h-4" />
-              Repairs
+              <Inbox className="w-4 h-4" />
+              Inbox
             </button>
 
             {panel === 'products' && (
@@ -417,6 +414,11 @@ export default function AdminPage() {
             )}
           </div>
         </div>
+        {saveError && (
+          <div className="px-6 lg:px-12 py-2 bg-red-500/10 border-t border-red-500/20 text-sm text-red-300">
+            {saveError}
+          </div>
+        )}
       </header>
 
       {panel === 'products' ? (
@@ -557,9 +559,7 @@ export default function AdminPage() {
                 <h2 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA]">
                   {editingId ? 'Edit Product' : 'Add Product'}
                 </h2>
-                <p className="text-xs text-[#A8ACB8]">
-                  Changes are kept in memory only for this session.
-                </p>
+                <p className="text-xs text-[#A8ACB8]">Image preview is local until you save (URL stored in the database).</p>
               </div>
               <button
                 onClick={() => {
@@ -666,7 +666,7 @@ export default function AdminPage() {
                 />
                 <div className="flex items-center justify-between gap-3 pt-2">
                   <p className="text-[11px] text-[#6B7280]">
-                    Stored locally for this session (no upload/backend yet).
+                    Paste a URL or use a data URL; the API stores the image field on the product.
                   </p>
                   {formState.image && (
                     <button
@@ -718,17 +718,22 @@ export default function AdminPage() {
                 />
               </div>
 
-              <div className="flex items-center justify-between pt-2">
-                <label className="flex items-center gap-2 text-xs text-[#A8ACB8]">
-                  <input
-                    type="checkbox"
-                    checked={formState.inStock}
-                    onChange={e => handleChange('inStock', e.target.checked)}
-                    className="w-4 h-4 rounded border-white/20 bg-white/5 text-[#FFD700]"
-                  />
-                  In stock
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-[#A8ACB8]" htmlFor="admin-stock">
+                  Stock quantity
                 </label>
+                <input
+                  type="number"
+                  id="admin-stock"
+                  min={0}
+                  value={formState.stockQuantity}
+                  onChange={(e) => handleChange('stockQuantity', e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
+                />
+                <p className="text-[11px] text-[#6B7280]">Listed as in stock when quantity is greater than zero.</p>
+              </div>
 
+              <div className="flex items-center justify-end pt-2">
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -742,9 +747,10 @@ export default function AdminPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-full text-xs font-semibold bg-[#FFD700] text-[#070A15] hover:bg-[#ffe44d]"
+                    disabled={saving}
+                    className="px-4 py-2 rounded-full text-xs font-semibold bg-[#FFD700] text-[#070A15] hover:bg-[#ffe44d] disabled:opacity-60"
                   >
-                    {editingId ? 'Save Changes' : 'Create Product'}
+                    {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Create Product'}
                   </button>
                 </div>
               </div>
@@ -756,6 +762,98 @@ export default function AdminPage() {
       ) : (
         <main className="px-6 lg:px-12 py-10">
           <div className="max-w-6xl mx-auto">
+            <div className="flex flex-wrap items-center gap-2 mb-8">
+              <button
+                type="button"
+                onClick={() => setInboxTab('invoices')}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                  inboxTab === 'invoices'
+                    ? 'bg-[#FFD700] text-[#070A15]'
+                    : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
+                }`}
+              >
+                Invoices
+              </button>
+              <button
+                type="button"
+                onClick={() => setInboxTab('repairs')}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                  inboxTab === 'repairs'
+                    ? 'bg-[#FFD700] text-[#070A15]'
+                    : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
+                }`}
+              >
+                <ClipboardList className="w-4 h-4" />
+                Repairs
+              </button>
+            </div>
+
+            {inboxTab === 'invoices' ? (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h2 className="font-['Space_Grotesk'] text-xl font-bold text-[#F4F6FA]">
+                      Checkout orders
+                    </h2>
+                    <p className="text-sm text-[#A8ACB8]">
+                      Firestore orders synced from customer checkout (read-only).
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOrdersLoading(true);
+                      api.admin
+                        .firestoreOrders()
+                        .then(setFirestoreOrders)
+                        .catch(() => setFirestoreOrders([]))
+                        .finally(() => setOrdersLoading(false));
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA] transition-colors"
+                  >
+                    Refresh
+                  </button>
+                </div>
+                {ordersLoading ? (
+                  <p className="text-sm text-[#A8ACB8]">Loading orders…</p>
+                ) : firestoreOrders.length === 0 ? (
+                  <p className="text-sm text-[#A8ACB8]">No Firestore orders yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {firestoreOrders.map((o) => {
+                      const id = String(o.id ?? '');
+                      const num = String(o.orderNumber ?? id);
+                      const total = o.total;
+                      const cust = o.customer as { name?: string; email?: string } | undefined;
+                      const created = o.createdAt ? String(o.createdAt) : '';
+                      return (
+                        <div
+                          key={id}
+                          className="rounded-2xl bg-[#111318] border border-white/5 p-4 space-y-2"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="font-mono text-sm text-[#FFD700]">{num}</p>
+                            <p className="text-xs text-[#6B7280]">{created}</p>
+                          </div>
+                          <p className="text-sm text-[#F4F6FA]">
+                            {cust?.name ?? '—'} · {cust?.email ?? '—'}
+                          </p>
+                          <p className="text-sm text-[#A8ACB8]">
+                            Total:{' '}
+                            <span className="text-[#F4F6FA]">
+                              {typeof total === 'number'
+                                ? `PHP ${total.toLocaleString('en-PH', { maximumFractionDigits: 0 })}`
+                                : String(total ?? '—')}
+                            </span>
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
             <div className="flex items-center justify-between gap-4 mb-6">
               <div>
                 <h2 className="font-['Space_Grotesk'] text-xl font-bold text-[#F4F6FA]">
@@ -782,7 +880,7 @@ export default function AdminPage() {
                 <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
                   <p className="text-sm font-semibold text-[#F4F6FA] flex items-center gap-2">
                     <ClipboardList className="w-4 h-4 text-[#FFD700]" />
-                    Inbox
+                    Queue
                   </p>
                   <p className="text-xs text-[#A8ACB8]">{repairs.length} total</p>
                 </div>
@@ -935,6 +1033,8 @@ export default function AdminPage() {
                 )}
               </section>
             </div>
+              </>
+            )}
           </div>
         </main>
       )}

@@ -1,3 +1,5 @@
+import type { ApiProductRow } from './productMap';
+
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 
 export class ApiError extends Error {
@@ -48,6 +50,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+export type AdminProductPayload = {
+  id?: string;
+  sku?: string | null;
+  name: string;
+  category: string;
+  description?: string;
+  price: number;
+  originalPrice?: number | null;
+  imageUrl?: string;
+  image?: string;
+  badge?: string | null;
+  inStock?: boolean;
+  stockQuantity?: number;
+  specs?: Record<string, string>;
+};
+
+export type OrderNotifyPayload = {
+  orderId: string;
+  orderNumber: string;
+  paymentFlow: 'cod' | 'online';
+  onlineChannel?: string;
+  customer: { name: string; email: string; phone: string; address: string };
+  totalPhp: number;
+};
+
 export const api = {
   auth: {
     register: (input: { name: string; email: string; password: string }) =>
@@ -60,41 +87,38 @@ export const api = {
         '/api/auth/login',
         { method: 'POST', body: JSON.stringify(input) }
       ),
+    google: (input: { idToken: string }) =>
+      request<{ token: string; user: { id: string; name: string; email: string; role: string } }>(
+        '/api/auth/google',
+        { method: 'POST', body: JSON.stringify(input) }
+      ),
     me: () => request<{ id: string; name: string; email: string; role: string }>('/api/me'),
+    /** Mint Firebase Auth custom token (uid = API user id) for Firestore cart/checkout. */
+    firebaseCustomToken: () => request<{ token: string }>('/api/auth/firebase-custom-token'),
   },
-  cart: {
-    get: () =>
-      request<{ items: { id: string; productId: string; quantity: number; product: any }[] }>(
-        '/api/cart'
-      ),
-    add: (input: {
-      productId: string;
-      quantity?: number;
-      product?: { name: string; category: string; price: number; image?: string; description?: string };
-    }) =>
-      request<{ id: string; productId: string; quantity: number; product: any }>(
-        '/api/cart/items',
-        {
-        method: 'POST',
-          body: JSON.stringify(input),
-        }
-      ),
-    update: (id: string, input: { quantity: number }) =>
-      request<{ id: string; productId: string; quantity: number; product: any }>(
-        `/api/cart/items/${id}`,
-        { method: 'PATCH', body: JSON.stringify(input) }
-      ),
-    remove: (id: string) => request<{ ok: true }>(`/api/cart/items/${id}`, { method: 'DELETE' }),
-    clear: () => request<{ ok: true }>(`/api/cart`, { method: 'DELETE' }),
+  products: {
+    list: () => request<ApiProductRow[]>('/api/products'),
   },
-  checkout: {
-    placeOrder: (input: { customer: { name: string; email: string; phone: string; address: string } }) =>
-      request<{ order: any }>('/api/checkout/place-order', { method: 'POST', body: JSON.stringify(input) }),
-    createPayment: (orderId: string, input: { provider: 'COD' | 'GCASH' | 'CARD'; reference?: string }) =>
-      request<{ payment: any }>(`/api/orders/${orderId}/payment`, { method: 'POST', body: JSON.stringify(input) }),
+  inventory: {
+    applyOrder: (input: { items: { productId: string; quantity: number }[] }) =>
+      request<{ ok: true }>('/api/inventory/apply-order', { method: 'POST', body: JSON.stringify(input) }),
+    rollbackOrder: (input: { items: { productId: string; quantity: number }[] }) =>
+      request<{ ok: true }>('/api/inventory/rollback-order', { method: 'POST', body: JSON.stringify(input) }),
   },
   orders: {
-    list: () => request<any[]>('/api/orders'),
+    notifyEmail: (input: OrderNotifyPayload) =>
+      request<{ ok: true }>('/api/orders/notify-email', { method: 'POST', body: JSON.stringify(input) }),
+  },
+  admin: {
+    createProduct: (input: AdminProductPayload) =>
+      request<ApiProductRow>('/api/admin/products', { method: 'POST', body: JSON.stringify(input) }),
+    updateProduct: (id: string, input: Partial<AdminProductPayload>) =>
+      request<ApiProductRow>(`/api/admin/products/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    deleteProduct: (id: string) => request<{ ok: true }>(`/api/admin/products/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    firestoreOrders: () => request<Record<string, unknown>[]>('/api/admin/firestore-orders'),
   },
 };
 

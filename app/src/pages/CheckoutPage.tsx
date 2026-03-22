@@ -4,8 +4,17 @@ import { ArrowLeft, CheckCircle, CreditCard, Truck, ClipboardCheck } from 'lucid
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
+import { placeOrderFirebase, createPaymentFirebase } from '../lib/firestoreCheckout';
 
-type PaymentMethod = 'cod' | 'gcash';
+type OnlineChannelId = 'GCASH' | 'MAYA' | 'GOTYME' | 'METROBANK' | 'BDO';
+
+const ONLINE_CHANNELS: { id: OnlineChannelId; label: string }[] = [
+  { id: 'GCASH', label: 'GCash' },
+  { id: 'MAYA', label: 'Maya' },
+  { id: 'GOTYME', label: 'GoTyme' },
+  { id: 'METROBANK', label: 'MetroBank' },
+  { id: 'BDO', label: 'BDO' },
+];
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-PH', {
@@ -14,25 +23,20 @@ const formatCurrency = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
-function isMobileUA() {
-  if (typeof navigator === 'undefined') return false;
-  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-}
-
-function getPlatform() {
-  if (typeof navigator === 'undefined') return 'other' as const;
-  const ua = navigator.userAgent;
-  if (/Android/i.test(ua)) return 'android' as const;
-  if (/iPhone|iPad|iPod/i.test(ua)) return 'ios' as const;
-  return 'other' as const;
-}
+type PlacedLine = {
+  productId: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+};
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const { items, getProduct, subtotal, clearCart } = useCart();
   const { user } = useAuth();
   const [step, setStep] = useState<'details' | 'place' | 'payment' | 'done'>('details');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cod');
+  const [paymentChoice, setPaymentChoice] = useState<'cod' | 'online' | null>(null);
+  const [onlineChannel, setOnlineChannel] = useState<OnlineChannelId | null>(null);
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -43,9 +47,36 @@ export default function CheckoutPage() {
   const [successOrderId, setSuccessOrderId] = useState<string | null>(null);
   const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
+  const [placedLines, setPlacedLines] = useState<PlacedLine[]>([]);
+  const [placedTotal, setPlacedTotal] = useState(0);
+  const [placing, setPlacing] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
 
   const shipping = useMemo(() => (subtotal > 0 ? 99 : 0), [subtotal]);
   const total = useMemo(() => subtotal + shipping, [subtotal, shipping]);
+
+  const summaryLines = useMemo(() => {
+    if (placedLines.length > 0) return placedLines;
+    return items.map((i) => {
+      const p = getProduct(i.productId);
+      return {
+        productId: i.productId,
+        name: p?.name ?? 'Item',
+        quantity: i.quantity,
+        unitPrice: p?.price ?? 0,
+      };
+    });
+  }, [placedLines, items, getProduct]);
+
+  const summarySubtotal = useMemo(() => {
+    if (placedLines.length > 0) {
+      return placedLines.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
+    }
+    return subtotal;
+  }, [placedLines, subtotal]);
+
+  const summaryShipping = useMemo(() => (summarySubtotal > 0 ? 99 : 0), [summarySubtotal]);
+  const summaryGrand = useMemo(() => summarySubtotal + summaryShipping, [summarySubtotal, summaryShipping]);
 
   if (!user) {
     return (
@@ -84,7 +115,26 @@ export default function CheckoutPage() {
     );
   }
 
-  if (items.length === 0 && !successOrderId) {
+  if (user.role === 'ADMIN') {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6">
+        <div className="max-w-md text-center space-y-4 rounded-3xl bg-[#111318] border border-white/5 p-8">
+          <h1 className="font-['Space_Grotesk'] text-2xl font-bold text-[#F4F6FA]">Checkout unavailable</h1>
+          <p className="text-sm text-[#A8ACB8]">
+            Administrator accounts cannot place customer orders. Use the admin dashboard to manage the store.
+          </p>
+          <Link
+            to="/admin"
+            className="inline-flex items-center justify-center px-6 py-3 bg-[#FFD700] text-[#070A15] font-semibold rounded-full hover:bg-[#ffe44d] transition-colors"
+          >
+            Open admin
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (items.length === 0 && !placedOrderId && step !== 'done') {
     return (
       <div className="min-h-screen">
         <header className="sticky top-0 z-50 bg-[#070A15]/85 backdrop-blur-md border-b border-white/10">
@@ -134,9 +184,8 @@ export default function CheckoutPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const placeOrderNow = () => {
+  const placeOrderNow = async () => {
     setError('');
-
     const name = form.name.trim();
     const email = form.email.trim();
     const phone = form.phone.trim();
@@ -148,37 +197,94 @@ export default function CheckoutPage() {
       return;
     }
 
-    api.checkout
-      .placeOrder({ customer: { name, email, phone, address } })
-      .then((res) => {
-        const order = res.order;
-        setPlacedOrderId(order.id);
-        setOrderNumber(order.orderNumber);
-        clearCart();
-        setStep('payment');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      })
-      .catch((e) => {
-        setError(e instanceof Error ? e.message : 'Failed to place order.');
-      });
+    if (!user) return;
+
+    const invItems = items.map((i) => ({ productId: i.productId, quantity: i.quantity }));
+    const lineSnapshot: PlacedLine[] = items.map((i) => {
+      const p = getProduct(i.productId);
+      return {
+        productId: i.productId,
+        name: p?.name ?? 'Item',
+        quantity: i.quantity,
+        unitPrice: p?.price ?? 0,
+      };
+    });
+    const snapSub = lineSnapshot.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
+    const snapShip = snapSub > 0 ? 99 : 0;
+    const snapGrand = snapSub + snapShip;
+
+    let stockApplied = false;
+    setPlacing(true);
+    try {
+      await api.inventory.applyOrder({ items: invItems });
+      stockApplied = true;
+      const res = await placeOrderFirebase(user.id, { customer: { name, email, phone, address } }, getProduct);
+      const order = res.order;
+      setPlacedOrderId(order.id);
+      setOrderNumber(order.orderNumber);
+      setPlacedLines(lineSnapshot);
+      setPlacedTotal(snapGrand);
+      clearCart();
+      setPaymentChoice(null);
+      setOnlineChannel(null);
+      setStep('payment');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (e) {
+      if (stockApplied) {
+        try {
+          await api.inventory.rollbackOrder({ items: invItems });
+        } catch {
+          // ignore rollback errors
+        }
+      }
+      setError(e instanceof Error ? e.message : 'Failed to place order.');
+    } finally {
+      setPlacing(false);
+    }
   };
 
-  const finalizePayment = (method: PaymentMethod) => {
-    if (!placedOrderId) return;
+  const finalizePayment = async () => {
+    if (!placedOrderId || !orderNumber || !user) return;
+    if (paymentChoice === 'online' && !onlineChannel) {
+      setError('Select a payment channel.');
+      return;
+    }
+    if (!paymentChoice) {
+      setError('Choose cash on delivery or online payment.');
+      return;
+    }
+
     setError('');
-    const provider = method === 'cod' ? 'COD' : 'GCASH';
-    api.checkout
-      .createPayment(placedOrderId, { provider })
-      .then(() => {
-        setPaymentMethod(method);
-        setSuccessOrderId(orderNumber ?? 'Order placed');
-        setStep('done');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        setTimeout(() => navigate('/'), 1200);
-      })
-      .catch((e) => {
-        setError(e instanceof Error ? e.message : 'Failed to confirm payment.');
+    setFinalizing(true);
+    try {
+      await createPaymentFirebase(
+        placedOrderId,
+        paymentChoice === 'cod' ? 'cod' : 'online',
+        user.id,
+        paymentChoice === 'online' ? onlineChannel ?? undefined : undefined
+      );
+      await api.orders.notifyEmail({
+        orderId: placedOrderId,
+        orderNumber,
+        paymentFlow: paymentChoice === 'cod' ? 'cod' : 'online',
+        onlineChannel: paymentChoice === 'online' ? onlineChannel ?? undefined : undefined,
+        customer: {
+          name: form.name.trim(),
+          email: form.email.trim(),
+          phone: form.phone.trim(),
+          address: form.address.trim(),
+        },
+        totalPhp: placedTotal || summaryGrand,
       });
+      setSuccessOrderId(orderNumber);
+      setStep('done');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      setTimeout(() => navigate('/'), 1800);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to confirm payment.');
+    } finally {
+      setFinalizing(false);
+    }
   };
 
   if (step === 'done' && successOrderId) {
@@ -232,14 +338,26 @@ export default function CheckoutPage() {
         <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-5 gap-8">
           <div className="lg:col-span-3 space-y-6">
             <div className="flex flex-wrap gap-2">
-              <span className={`px-4 py-2 rounded-full text-sm font-medium ${step === 'details' ? 'bg-[#FFD700] text-[#070A15]' : 'bg-white/5 text-[#A8ACB8]'}`}>
+              <span
+                className={`px-4 py-2 rounded-full text-sm font-medium ${
+                  step === 'details' ? 'bg-[#FFD700] text-[#070A15]' : 'bg-white/5 text-[#A8ACB8]'
+                }`}
+              >
                 1) Details
               </span>
-              <span className={`px-4 py-2 rounded-full text-sm font-medium ${step === 'place' ? 'bg-[#FFD700] text-[#070A15]' : 'bg-white/5 text-[#A8ACB8]'}`}>
+              <span
+                className={`px-4 py-2 rounded-full text-sm font-medium ${
+                  step === 'place' ? 'bg-[#FFD700] text-[#070A15]' : 'bg-white/5 text-[#A8ACB8]'
+                }`}
+              >
                 2) Place order
               </span>
-              <span className={`px-4 py-2 rounded-full text-sm font-medium ${step === 'payment' ? 'bg-[#FFD700] text-[#070A15]' : 'bg-white/5 text-[#A8ACB8]'}`}>
-                3) Payment options
+              <span
+                className={`px-4 py-2 rounded-full text-sm font-medium ${
+                  step === 'payment' ? 'bg-[#FFD700] text-[#070A15]' : 'bg-white/5 text-[#A8ACB8]'
+                }`}
+              >
+                3) Payment
               </span>
             </div>
 
@@ -300,7 +418,9 @@ export default function CheckoutPage() {
                 <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
                   <p className="text-xs text-[#A8ACB8] mb-2">Ship to</p>
                   <p className="text-sm text-[#F4F6FA]">{form.name}</p>
-                  <p className="text-sm text-[#A8ACB8]">{form.phone} • {form.email}</p>
+                  <p className="text-sm text-[#A8ACB8]">
+                    {form.phone} • {form.email}
+                  </p>
                   <p className="text-sm text-[#A8ACB8] mt-2 whitespace-pre-wrap">{form.address}</p>
                 </div>
 
@@ -316,10 +436,11 @@ export default function CheckoutPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={placeOrderNow}
-                    className="flex-1 px-8 py-4 rounded-full bg-[#FFD700] text-[#070A15] font-semibold hover:bg-[#ffe44d] transition-colors"
+                    onClick={() => void placeOrderNow()}
+                    disabled={placing}
+                    className="flex-1 px-8 py-4 rounded-full bg-[#FFD700] text-[#070A15] font-semibold hover:bg-[#ffe44d] transition-colors disabled:opacity-60"
                   >
-                    Place order ({formatCurrency(total)})
+                    {placing ? 'Placing…' : `Place order (${formatCurrency(total)})`}
                   </button>
                 </div>
               </section>
@@ -329,112 +450,114 @@ export default function CheckoutPage() {
               <section className="rounded-3xl bg-[#111318] border border-white/5 p-6 space-y-5">
                 <h2 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA] flex items-center gap-2">
                   <CreditCard className="w-5 h-5 text-[#FFD700]" />
-                  Payment options
+                  Payment method
                 </h2>
 
                 <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
                   <p className="text-xs text-[#A8ACB8] mb-2">Order reference</p>
                   <p className="font-mono text-[#F4F6FA]">{orderNumber ?? placedOrderId}</p>
                   <p className="text-sm text-[#A8ACB8] mt-3">
-                    Amount due: <span className="text-[#FFD700] font-semibold">{formatCurrency(total)}</span>
+                    Amount due:{' '}
+                    <span className="text-[#FFD700] font-semibold">
+                      {formatCurrency(placedTotal || summaryGrand)}
+                    </span>
                   </p>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <p className="text-sm text-[#A8ACB8]">
+                  Your order is recorded. Choose how you will pay. We will email the store with your details and this
+                  payment choice.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => setPaymentMethod('cod')}
-                    className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                      paymentMethod === 'cod'
-                        ? 'bg-[#FFD700] text-[#070A15]'
-                        : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
+                    onClick={() => {
+                      setPaymentChoice('cod');
+                      setOnlineChannel(null);
+                    }}
+                    className={`px-4 py-4 rounded-2xl text-sm font-semibold transition-colors border ${
+                      paymentChoice === 'cod'
+                        ? 'bg-[#FFD700] text-[#070A15] border-[#FFD700]'
+                        : 'bg-white/5 text-[#A8ACB8] border-white/10 hover:bg-white/10'
                     }`}
                   >
                     Cash on delivery
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPaymentMethod('gcash')}
-                    className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                      paymentMethod === 'gcash'
-                        ? 'bg-[#FFD700] text-[#070A15]'
-                        : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
+                    onClick={() => setPaymentChoice('online')}
+                    className={`px-4 py-4 rounded-2xl text-sm font-semibold transition-colors border ${
+                      paymentChoice === 'online'
+                        ? 'bg-[#FFD700] text-[#070A15] border-[#FFD700]'
+                        : 'bg-white/5 text-[#A8ACB8] border-white/10 hover:bg-white/10'
                     }`}
                   >
-                    GCash
+                    Online payment
                   </button>
                 </div>
 
-                {paymentMethod === 'cod' ? (
+                {paymentChoice === 'online' && (
                   <div className="space-y-3">
-                    <p className="text-sm text-[#A8ACB8]">
-                      Pay the rider upon delivery. Your order will be marked as pending.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => finalizePayment('cod')}
-                      className="w-full px-8 py-4 rounded-full bg-[#FFD700] text-[#070A15] font-semibold hover:bg-[#ffe44d] transition-colors"
-                    >
-                      Confirm COD
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <p className="text-sm text-[#A8ACB8]">
-                      On mobile, tap the button below to open GCash. You can also scan the QR.
-                      This demo checkout does not verify payments automatically.
-                    </p>
-
-                    <div className="flex items-center justify-center">
-                      <div className="rounded-2xl bg-white p-3 shadow-lg max-w-xs w-full">
-                        <img
-                          src="/images/gcash-qr.png"
-                          alt="GCash payment QR code"
-                          className="w-full h-auto object-contain"
-                        />
-                      </div>
+                    <p className="text-xs font-medium text-[#A8ACB8]">Select channel</p>
+                    <div className="flex flex-wrap gap-2">
+                      {ONLINE_CHANNELS.map((ch) => (
+                        <button
+                          key={ch.id}
+                          type="button"
+                          onClick={() => setOnlineChannel(ch.id)}
+                          className={`px-3 py-2 rounded-full text-xs font-medium transition-colors ${
+                            onlineChannel === ch.id
+                              ? 'bg-[#FFD700] text-[#070A15]'
+                              : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10'
+                          }`}
+                        >
+                          {ch.label}
+                        </button>
+                      ))}
                     </div>
-
-                    {isMobileUA() && (
-                      <a
-                        href="gcash://app"
-                        className="block w-full text-center px-8 py-4 rounded-full bg-[#00AEEF] text-white font-semibold hover:opacity-90 transition-opacity"
-                      >
-                        Open GCash
-                      </a>
-                    )}
-
-                    {getPlatform() === 'android' && (
-                      <a
-                        href="https://play.google.com/store/apps/details?id=com.globe.gcash.android"
-                        className="block w-full text-center px-8 py-4 rounded-full bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA] transition-colors"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Install GCash (Android)
-                      </a>
-                    )}
-
-                    {getPlatform() === 'ios' && (
-                      <a
-                        href="https://apps.apple.com/ph/app/gcash/id520020791"
-                        className="block w-full text-center px-8 py-4 rounded-full bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA] transition-colors"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Install GCash (iOS)
-                      </a>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => finalizePayment('gcash')}
-                      className="w-full px-8 py-4 rounded-full bg-[#FFD700] text-[#070A15] font-semibold hover:bg-[#ffe44d] transition-colors"
-                    >
-                      I have paid
-                    </button>
                   </div>
                 )}
+
+                {paymentChoice === 'online' && onlineChannel && (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
+                    <p className="text-sm text-[#F4F6FA] font-medium">
+                      Pay with {ONLINE_CHANNELS.find((c) => c.id === onlineChannel)?.label}
+                    </p>
+                    <p className="text-xs text-[#A8ACB8]">
+                      Scan the QR placeholder below. This demo does not verify bank transfers automatically.
+                    </p>
+                    <div className="mx-auto max-w-[220px] aspect-square rounded-2xl bg-gradient-to-br from-white/20 to-white/5 border-2 border-dashed border-white/20 flex items-center justify-center">
+                      <span className="text-[11px] text-[#A8ACB8] text-center px-4">
+                        QR placeholder
+                        <br />
+                        {onlineChannel}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {paymentChoice === 'cod' && (
+                  <p className="text-sm text-[#A8ACB8]">
+                    Pay the rider when your order arrives. We will notify the store by email with your shipping details
+                    and this choice.
+                  </p>
+                )}
+
+                {error && <p className="text-sm text-red-400">{error}</p>}
+
+                <button
+                  type="button"
+                  onClick={() => void finalizePayment()}
+                  disabled={
+                    finalizing ||
+                    !paymentChoice ||
+                    (paymentChoice === 'online' && !onlineChannel)
+                  }
+                  className="w-full px-8 py-4 rounded-full bg-[#FFD700] text-[#070A15] font-semibold hover:bg-[#ffe44d] transition-colors disabled:opacity-50"
+                >
+                  {finalizing ? 'Confirming…' : 'Confirm payment & notify store'}
+                </button>
               </section>
             )}
           </div>
@@ -445,42 +568,38 @@ export default function CheckoutPage() {
                 Order summary
               </h2>
               <div className="space-y-3">
-                {items.map((i) => {
-                  const p = getProduct(i.productId);
-                  if (!p) return null;
-                  return (
-                    <div key={i.productId} className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm text-[#F4F6FA] truncate">{p.name}</p>
-                        <p className="text-xs text-[#A8ACB8]">Qty: {i.quantity}</p>
-                      </div>
-                      <p className="text-sm text-[#A8ACB8] whitespace-nowrap">
-                        {formatCurrency(p.price * i.quantity)}
-                      </p>
+                {summaryLines.map((line) => (
+                  <div key={line.productId} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm text-[#F4F6FA] truncate">{line.name}</p>
+                      <p className="text-xs text-[#A8ACB8]">Qty: {line.quantity}</p>
                     </div>
-                  );
-                })}
+                    <p className="text-sm text-[#A8ACB8] whitespace-nowrap">
+                      {formatCurrency(line.unitPrice * line.quantity)}
+                    </p>
+                  </div>
+                ))}
               </div>
               <div className="mt-6 pt-4 border-t border-white/10 space-y-2 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-[#A8ACB8]">Subtotal</span>
-                  <span className="text-[#F4F6FA]">{formatCurrency(subtotal)}</span>
+                  <span className="text-[#F4F6FA]">{formatCurrency(summarySubtotal)}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[#A8ACB8]">Shipping</span>
-                  <span className="text-[#F4F6FA]">{formatCurrency(shipping)}</span>
+                  <span className="text-[#F4F6FA]">{formatCurrency(summaryShipping)}</span>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-white/10">
                   <span className="text-[#A8ACB8]">Total</span>
                   <span className="font-['Space_Grotesk'] text-lg font-bold text-[#FFD700]">
-                    {formatCurrency(total)}
+                    {formatCurrency(summaryGrand)}
                   </span>
                 </div>
               </div>
             </div>
 
             <p className="text-xs text-[#6B7280]">
-              Demo checkout: orders are stored in your browser localStorage under your logged-in account.
+              Orders are stored in Firestore; inventory is updated from the product database when you place the order.
             </p>
           </aside>
         </div>
@@ -488,4 +607,3 @@ export default function CheckoutPage() {
     </div>
   );
 }
-

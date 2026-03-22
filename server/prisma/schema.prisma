@@ -48,17 +48,21 @@ model User {
 }
 
 model Product {
-  id          String   @id @default(uuid())
-  sku         String?  @unique
-  name        String
-  description String
-  category    String
-  imageUrl    String?
-  priceCents  Int
-  currency    String   @default("PHP")
-  inStock     Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String   @id @default(uuid())
+  sku                String?  @unique
+  name               String
+  description        String
+  category           String
+  imageUrl           String?
+  priceCents         Int
+  originalPriceCents Int?
+  currency           String   @default("PHP")
+  inStock            Boolean  @default(true)
+  stockQuantity      Int      @default(0)
+  badge              String?
+  specs              Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   cartItems  CartItem[]
   orderItems OrderItem[]

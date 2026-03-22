@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { useAuth } from './context/AuthContext';
 import Navigation from './components/Navigation';
 import HomePage from './pages/HomePage';
 import ProductListingPage from './pages/ProductListingPage';
@@ -32,9 +33,22 @@ function ScrollToTop() {
   return null;
 }
 
+/** Keeps API session in sync after client-side navigation (e.g. admin → home). */
+function AuthSessionSync() {
+  const location = useLocation();
+  const { refreshUser } = useAuth();
+
+  useEffect(() => {
+    void refreshUser();
+  }, [location.pathname, refreshUser]);
+
+  return null;
+}
+
 function App() {
   return (
     <BrowserRouter>
+      <AuthSessionSync />
       <ScrollToTop />
       <div className="relative min-h-screen">
         {/* Grain overlay */}

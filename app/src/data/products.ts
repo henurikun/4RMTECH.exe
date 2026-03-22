@@ -9,6 +9,8 @@ export interface Product {
   description: string;
   badge?: string;
   inStock: boolean;
+  /** From API; when missing, catalog treats as ample stock for static items. */
+  stockQuantity?: number;
 }
 
 export const laptops: Product[] = [

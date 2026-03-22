@@ -1,5 +1,8 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import { auth } from '../firebase';
 import { api, setToken } from '../lib/api';
+import { syncFirebaseSession } from '../lib/firebaseSession';
 
 type UserRole = 'USER' | 'ADMIN';
 
@@ -13,7 +16,10 @@ export interface AuthUser {
 interface AuthContextValue {
   user: AuthUser | null;
   isAuthed: boolean;
+  /** Re-fetch session from API (e.g. after client-side navigation). */
+  refreshUser: () => Promise<void>;
   login: (input: { email: string; password: string }) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   register: (input: { name: string; email: string; password: string }) => Promise<void>;
   logout: () => void;
 }
@@ -23,45 +29,58 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
 
-  useEffect(() => {
-    api.auth
-      .me()
-      .then((me) => setUser({ id: me.id, email: me.email, name: me.name, role: me.role as UserRole }))
-      .catch(() => {
-        // no session / token
-        setUser(null);
-      });
+  const refreshUser = useCallback(async () => {
+    try {
+      const me = await api.auth.me();
+      setUser({ id: me.id, email: me.email, name: me.name, role: me.role as UserRole });
+      await syncFirebaseSession();
+    } catch {
+      setUser(null);
+      signOut(auth).catch(() => {});
+    }
   }, []);
 
   const login = useCallback(async ({ email, password }: { email: string; password: string }) => {
     const res = await api.auth.login({ email, password });
     setToken(res.token);
-    setUser({ id: res.user.id, email: res.user.email, name: res.user.name, role: res.user.role as UserRole });
-  }, []);
+    await refreshUser();
+  }, [refreshUser]);
 
   const register = useCallback(
     async ({ name, email, password }: { name: string; email: string; password: string }) => {
       const res = await api.auth.register({ name, email, password });
       setToken(res.token);
-      setUser({ id: res.user.id, email: res.user.email, name: res.user.name, role: res.user.role as UserRole });
+      await refreshUser();
     },
-    []
+    [refreshUser]
   );
+
+  const loginWithGoogle = useCallback(async () => {
+    const provider = new GoogleAuthProvider();
+    const cred = await signInWithPopup(auth, provider);
+    const idToken = await cred.user.getIdToken();
+    const res = await api.auth.google({ idToken });
+    setToken(res.token);
+    await refreshUser();
+  }, [refreshUser]);
 
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
+    signOut(auth).catch(() => {});
   }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
       isAuthed: Boolean(user),
+      refreshUser,
       login,
+      loginWithGoogle,
       register,
       logout,
     }),
-    [user, login, register, logout]
+    [user, refreshUser, login, loginWithGoogle, register, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

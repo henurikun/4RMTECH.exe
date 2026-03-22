@@ -1,18 +1,25 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { toast } from 'sonner';
 import { allProducts, type Product } from '../data/products';
 import { allComponents } from '../data/pcComponents';
-import { api } from '../lib/api';
+import { useCatalog } from './CatalogContext';
+import { auth } from '../firebase';
+import { ensureFirebaseUidMatchesApiUser } from '../lib/firebaseSession';
+import { getStockQuantity, isPurchasable, maxAddable } from '../lib/productAvailability';
+import {
+  addCartItem as fsAddCartItem,
+  clearCartItems,
+  removeCartItem as fsRemoveCartItem,
+  subscribeCartItems,
+  updateCartQuantity as fsUpdateCartQuantity,
+} from '../lib/firestoreCart';
+import type { CartItem } from '../types/cart';
 import { useAuth } from './AuthContext';
 
-const GUEST_STORAGE_KEY = '4rmtech_cart_guest';
+export type { CartItem };
 
-export interface CartItem {
-  // Present when user is logged in (DB cart item id)
-  id?: string;
-  productId: string;
-  quantity: number;
-  productData?: Product;
-}
+const GUEST_STORAGE_KEY = '4rmtech_cart_guest';
 
 interface CartContextValue {
   items: CartItem[];
@@ -46,25 +53,16 @@ function saveGuestCart(items: CartItem[]) {
   }
 }
 
-function mapApiProductToProduct(apiProduct: any): Product {
-  return {
-    id: apiProduct.id,
-    name: apiProduct.name,
-    category: apiProduct.category,
-    price: Math.round((apiProduct.priceCents ?? 0) / 100),
-    image: apiProduct.imageUrl ?? '/images/laptop_desk.jpg',
-    specs: {},
-    description: apiProduct.description ?? '',
-    inStock: Boolean(apiProduct.inStock ?? true),
-  };
-}
-
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
+  const isAdminShopper = user?.role === 'ADMIN';
+  const { products: catalogProducts } = useCatalog();
   const [items, setItems] = useState<CartItem[]>(() => loadGuestCart());
 
   const resolveLocalProduct = useCallback((id: string): Product | undefined => {
-    let p = allProducts.find((p) => p.id === id);
+    let p = catalogProducts.find((x) => x.id === id);
+    if (p) return p;
+    p = allProducts.find((x) => x.id === id);
     if (p) return p;
 
     for (const cat of Object.values(allComponents)) {
@@ -83,7 +81,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       }
     }
     return undefined;
-  }, []);
+  }, [catalogProducts]);
 
   const getProduct = useCallback(
     (id: string) => {
@@ -94,74 +92,113 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     [items, resolveLocalProduct]
   );
 
-  const syncAuthedCart = useCallback(async () => {
-    const data = await api.cart.get();
-    const mapped: CartItem[] = data.items.map((i) => ({
-      id: i.id,
-      productId: i.productId,
-      quantity: i.quantity,
-      productData: mapApiProductToProduct(i.product),
-    }));
-    setItems(mapped);
-  }, []);
-
   useEffect(() => {
     if (!user) {
       setItems(loadGuestCart());
       return;
     }
-    syncAuthedCart().catch(() => setItems([]));
-  }, [syncAuthedCart, user]);
+
+    let unsubCart: (() => void) | undefined;
+    const unsubAuth = onAuthStateChanged(auth, (fbUser) => {
+      unsubCart?.();
+      unsubCart = undefined;
+      if (!fbUser || fbUser.uid !== user.id) {
+        setItems([]);
+        return;
+      }
+      unsubCart = subscribeCartItems(
+        user.id,
+        (next) => setItems(next),
+        () => setItems([])
+      );
+    });
+
+    return () => {
+      unsubAuth();
+      unsubCart?.();
+    };
+  }, [user]);
 
   const addItem = useCallback(
     (productId: string, quantity = 1, productData?: Product) => {
+      if (isAdminShopper) {
+        toast.error('Administrator accounts cannot add items to the cart.');
+        return;
+      }
+
+      const resolved = productData ?? resolveLocalProduct(productId);
+      if (!resolved || !isPurchasable(resolved)) {
+        toast.error('This item is out of stock.');
+        return;
+      }
+
       if (user) {
-        const resolved = productData ?? resolveLocalProduct(productId);
-        api.cart
-          .add({
-            productId,
-            quantity,
-            product: resolved
-              ? {
-                  name: resolved.name,
-                  category: resolved.category,
-                  price: resolved.price,
-                  image: resolved.image,
-                  description: resolved.description,
-                }
-              : undefined,
-          })
-          .then(() => syncAuthedCart())
-          .catch(() => {});
+        void (async () => {
+          const ok = await ensureFirebaseUidMatchesApiUser(user.id);
+          if (!ok) return;
+          const qtyInCart =
+            items.find((i) => i.productId === productId)?.quantity ?? 0;
+          const maxA = maxAddable(resolved, qtyInCart);
+          if (maxA <= 0) {
+            toast.error('No more stock available for this item.');
+            return;
+          }
+          const addQty = Math.min(quantity, maxA);
+          if (addQty < quantity) {
+            toast.message('Quantity limited by available stock.', {
+              description: `Added ${addQty} instead of ${quantity}.`,
+            });
+          }
+          try {
+            await fsAddCartItem(user.id, productId, addQty, resolved);
+          } catch {
+            // permission-denied if rules/token mismatch
+          }
+        })();
         return;
       }
 
       setItems((prev) => {
+        const qtyInCart = prev.find((i) => i.productId === productId)?.quantity ?? 0;
+        const maxA = maxAddable(resolved, qtyInCart);
+        if (maxA <= 0) {
+          toast.error('No more stock available for this item.');
+          return prev;
+        }
+        const addQty = Math.min(quantity, maxA);
+        if (addQty < quantity) {
+          toast.message('Quantity limited by available stock.', {
+            description: `Added ${addQty} instead of ${quantity}.`,
+          });
+        }
         const existing = prev.find((i) => i.productId === productId);
         let next: CartItem[];
         if (existing) {
           next = prev.map((i) =>
-            i.productId === productId ? { ...i, quantity: i.quantity + quantity } : i
+            i.productId === productId ? { ...i, quantity: i.quantity + addQty } : i
           );
         } else {
-          next = [...prev, { productId, quantity, productData }];
+          next = [...prev, { productId, quantity: addQty, productData: resolved }];
         }
         saveGuestCart(next);
         return next;
       });
     },
-    [resolveLocalProduct, syncAuthedCart, user]
+    [isAdminShopper, items, resolveLocalProduct, user]
   );
 
   const removeItem = useCallback(
     (productId: string) => {
       if (user) {
-        const item = items.find((i) => i.productId === productId);
-        if (!item?.id) return;
-        api.cart
-          .remove(item.id)
-          .then(() => syncAuthedCart())
-          .catch(() => {});
+        void (async () => {
+          const ok = await ensureFirebaseUidMatchesApiUser(user.id);
+          if (!ok) return;
+          try {
+            await fsRemoveCartItem(user.id, productId);
+          } catch {
+            // ignore
+          }
+        })();
         return;
       }
 
@@ -171,42 +208,48 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
     },
-    [items, syncAuthedCart, user]
+    [user]
   );
 
   const updateQuantity = useCallback(
     (productId: string, quantity: number) => {
+      const resolved = resolveLocalProduct(productId) ?? getProduct(productId);
+      const max = resolved ? getStockQuantity(resolved) : 999;
+      const clamped = Math.min(quantity, max);
+
+      if (quantity > max && max >= 0) {
+        toast.message('Quantity adjusted to available stock.');
+      }
+
       if (user) {
-        const item = items.find((i) => i.productId === productId);
-        if (!item?.id) return;
-
-        if (quantity < 1) {
-          api.cart
-            .remove(item.id)
-            .then(() => syncAuthedCart())
-            .catch(() => {});
-          return;
-        }
-
-        api.cart
-          .update(item.id, { quantity })
-          .then(() => syncAuthedCart())
-          .catch(() => {});
+        void (async () => {
+          const ok = await ensureFirebaseUidMatchesApiUser(user.id);
+          if (!ok) return;
+          try {
+            if (clamped < 1) {
+              await fsRemoveCartItem(user.id, productId);
+            } else {
+              await fsUpdateCartQuantity(user.id, productId, clamped);
+            }
+          } catch {
+            // ignore
+          }
+        })();
         return;
       }
 
-      if (quantity < 1) {
+      if (clamped < 1) {
         removeItem(productId);
         return;
       }
 
       setItems((prev) => {
-        const next = prev.map((i) => (i.productId === productId ? { ...i, quantity } : i));
+        const next = prev.map((i) => (i.productId === productId ? { ...i, quantity: clamped } : i));
         saveGuestCart(next);
         return next;
       });
     },
-    [items, removeItem, syncAuthedCart, user]
+    [getProduct, removeItem, resolveLocalProduct, user]
   );
 
   const totalItems = useMemo(() => items.reduce((sum, i) => sum + i.quantity, 0), [items]);
@@ -220,15 +263,23 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const clearCart = useCallback(() => {
     if (user) {
-      api.cart
-        .clear()
-        .then(() => syncAuthedCart())
-        .catch(() => setItems([]));
+      void (async () => {
+        const ok = await ensureFirebaseUidMatchesApiUser(user.id);
+        if (!ok) {
+          setItems([]);
+          return;
+        }
+        try {
+          await clearCartItems(user.id);
+        } catch {
+          setItems([]);
+        }
+      })();
       return;
     }
     setItems([]);
     saveGuestCart([]);
-  }, [syncAuthedCart, user]);
+  }, [user]);
 
   const value = useMemo(
     () => ({

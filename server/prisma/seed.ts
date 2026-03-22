@@ -3,8 +3,8 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../src/prisma';
 
 async function main() {
-  const adminEmail = 'admin@4rmtech.com';
-  const adminPass = 'admin12345';
+  const adminEmail = 'tupacxxx889@gmail.com';
+  const adminPass = '4rmtech-admin';
 
   const admin = await prisma.user.upsert({
     where: { email: adminEmail },
@@ -26,6 +26,10 @@ async function main() {
       category: 'laptops',
       imageUrl: '/images/laptop_desk.jpg',
       priceCents: 3999900,
+      originalPriceCents: 4299900,
+      badge: 'Popular',
+      specs: { Processor: 'Intel Core Ultra 7', RAM: '16GB DDR5', Storage: '512GB NVMe' },
+      stockQuantity: 25,
       inStock: true,
     },
     {
@@ -35,6 +39,8 @@ async function main() {
       category: 'audio',
       imageUrl: '/images/headphones_product.jpg',
       priceCents: 599900,
+      specs: { Type: 'Over-ear', ANC: 'Hybrid', Battery: '30h' },
+      stockQuantity: 40,
       inStock: true,
     },
     {
@@ -44,6 +50,8 @@ async function main() {
       category: 'devices',
       imageUrl: '/images/device_modern.jpg',
       priceCents: 249900,
+      specs: { Connectivity: 'Wi-Fi 6', Voice: 'Assistant-ready' },
+      stockQuantity: 15,
       inStock: true,
     },
   ];
@@ -57,6 +65,10 @@ async function main() {
         category: p.category,
         imageUrl: p.imageUrl,
         priceCents: p.priceCents,
+        originalPriceCents: p.originalPriceCents ?? null,
+        badge: p.badge ?? null,
+        specs: p.specs ?? undefined,
+        stockQuantity: p.stockQuantity ?? 0,
         inStock: p.inStock,
       },
       create: p,

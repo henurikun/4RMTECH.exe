@@ -22,3 +22,11 @@ export function requireAuth(req: AuthedRequest, res: Response, next: NextFunctio
   }
 }
 
+export function requireAdmin(req: AuthedRequest, res: Response, next: NextFunction) {
+  if (req.auth?.role !== 'ADMIN') {
+    res.status(403).json({ error: 'Admin only' });
+    return;
+  }
+  next();
+}
+

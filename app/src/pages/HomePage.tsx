@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import HeroSection from '../sections/HeroSection';
@@ -8,7 +8,7 @@ import ProductSection from '../sections/ProductSection';
 import MembershipSection from '../sections/MembershipSection';
 import RepairSection from '../sections/RepairSection';
 import FinalCTASection from '../sections/FinalCTASection';
-import { ADMIN_EMAIL, ADMIN_PASSWORD } from '../config/adminAuth';
+import { useAuth } from '../context/AuthContext';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -79,6 +79,7 @@ const products: Product[] = [
 export default function HomePage() {
   const mainRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
@@ -130,23 +131,17 @@ export default function HomePage() {
     };
   }, []);
 
-  const handleAdminLogin = (event: React.FormEvent) => {
+  const handleAdminLogin = async (event: React.FormEvent) => {
     event.preventDefault();
-    const emailOk = adminEmail.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
-    const passwordOk = adminPassword === ADMIN_PASSWORD;
-    if (!emailOk || !passwordOk) {
-      setAdminError('Invalid admin credentials.');
-      return;
-    }
-
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('4rmtech_admin', 'true');
-    }
-
     setAdminError('');
-    setShowAdminLogin(false);
-    setAdminPassword('');
-    navigate('/admin');
+    try {
+      await login({ email: adminEmail.trim(), password: adminPassword });
+      navigate('/admin');
+      setShowAdminLogin(false);
+      setAdminPassword('');
+    } catch {
+      setAdminError('Invalid credentials or not an admin account.');
+    }
   };
 
   return (
@@ -255,6 +250,16 @@ export default function HomePage() {
               >
                 Enter
               </button>
+              <p className="text-[10px] text-[#6B7280] pt-1">
+                Use the admin account from <code className="text-[#A8ACB8]">db:seed</code> (e.g. admin@4rmtech.com).
+              </p>
+              <Link
+                to="/login"
+                state={{ from: '/admin' }}
+                className="block text-center text-[11px] text-[#FFD700] hover:underline pt-1"
+              >
+                Open full login
+              </Link>
             </form>
           </div>
         </div>

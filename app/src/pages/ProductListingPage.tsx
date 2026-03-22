@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Filter, ShoppingCart, Check, Star } from 'lucide-react';
-import { allProducts, type Product } from '../data/products';
+import type { Product } from '../data/products';
+import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
+import { useCatalog } from '../context/CatalogContext';
+import { isPurchasable } from '../lib/productAvailability';
 
 const categoryNames: Record<string, string> = {
   laptops: 'Laptops',
   wearables: 'Wearables',
   audio: 'Audio',
+  cameras: 'Cameras',
   devices: 'Devices',
   consoles: 'Consoles',
 };
@@ -19,6 +23,8 @@ export default function ProductListingPage() {
   const [filter, setFilter] = useState<'all' | 'budget' | 'premium'>('all');
   const [sort, setSort] = useState<'price-low' | 'price-high' | 'featured'>('featured');
   const { addItem, totalItems, items } = useCart();
+  const { user } = useAuth();
+  const { products: catalogProducts } = useCatalog();
 
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat('en-PH', {
@@ -32,7 +38,9 @@ export default function ProductListingPage() {
       const q = (searchParams.get('q') ?? '').trim().toLowerCase();
 
       let filtered =
-        category === 'all' ? [...allProducts] : allProducts.filter(p => p.category === category);
+        category === 'all'
+          ? [...catalogProducts]
+          : catalogProducts.filter((p) => p.category === category);
 
       if (q) {
         filtered = filtered.filter((p) => {
@@ -61,9 +69,11 @@ export default function ProductListingPage() {
         filtered.sort((a, b) => b.price - a.price);
       }
 
+      filtered = filtered.filter((p) => isPurchasable(p));
+
       setProducts(filtered);
     }
-  }, [category, filter, sort, searchParams]);
+  }, [category, filter, sort, searchParams, catalogProducts]);
 
   const isInCart = (productId: string) => items.some((i) => i.productId === productId);
 
@@ -203,14 +213,18 @@ export default function ProductListingPage() {
                     
                     <button
                       onClick={() => addItem(product.id, 1)}
-                      disabled={isInCart(product.id)}
+                      disabled={user?.role === 'ADMIN' || isInCart(product.id)}
                       className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-colors ${
-                        isInCart(product.id)
-                          ? 'bg-green-500/20 text-green-400 cursor-default'
-                          : 'bg-[#FFD700] text-[#070A15] hover:bg-[#ffe44d]'
+                        user?.role === 'ADMIN'
+                          ? 'bg-white/5 text-[#6B7280] cursor-not-allowed'
+                          : isInCart(product.id)
+                            ? 'bg-green-500/20 text-green-400 cursor-default'
+                            : 'bg-[#FFD700] text-[#070A15] hover:bg-[#ffe44d]'
                       }`}
                     >
-                      {isInCart(product.id) ? (
+                      {user?.role === 'ADMIN' ? (
+                        'Admin'
+                      ) : isInCart(product.id) ? (
                         <>
                           <Check className="w-4 h-4" />
                           Added
