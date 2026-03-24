@@ -5,7 +5,7 @@ import type { Product } from '../data/products';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { useCatalog } from '../context/CatalogContext';
-import { isPurchasable } from '../lib/productAvailability';
+import { getStockQuantity, isPurchasable } from '../lib/productAvailability';
 
 const categoryNames: Record<string, string> = {
   laptops: 'Laptops',
@@ -25,6 +25,20 @@ export default function ProductListingPage() {
   const { addItem, totalItems, items } = useCart();
   const { user } = useAuth();
   const { products: catalogProducts } = useCatalog();
+
+  if (user?.role === 'ADMIN') {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6">
+        <div className="max-w-md text-center space-y-4">
+          <h1 className="font-['Space_Grotesk'] text-2xl font-bold text-[#F4F6FA]">Shopping disabled for admin</h1>
+          <p className="text-[#A8ACB8]">Administrator accounts are redirected to inventory management.</p>
+          <Link to="/admin" className="inline-flex px-6 py-3 rounded-full bg-[#FFD700] text-[#070A15] font-semibold">
+            Open inventory
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat('en-PH', {
@@ -174,6 +188,11 @@ export default function ProductListingPage() {
                   {product.originalPrice && (
                     <div className="absolute top-4 right-4 px-3 py-1 bg-red-500/90 text-white text-xs font-bold rounded-full">
                       Save {formatCurrency(product.originalPrice - product.price)}
+                    </div>
+                  )}
+                  {getStockQuantity(product) <= 5 && (
+                    <div className="absolute bottom-4 left-4 px-3 py-1 bg-orange-500/90 text-white text-xs font-bold rounded-full">
+                      Low stock
                     </div>
                   )}
                 </div>

@@ -1,12 +1,10 @@
-import { useRef, useLayoutEffect, useState } from 'react';
+import { useRef, useLayoutEffect, useState, useEffect } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Monitor, Battery, Droplets, HardDrive, ArrowRight, CheckCircle } from 'lucide-react';
+import { api } from '../lib/api';
 
 gsap.registerPlugin(ScrollTrigger);
-
-const REPAIRS_STORAGE_KEY = '4rmtech_repairs';
-const REPAIR_RESPONSES_STORAGE_KEY = '4rmtech_repair_responses';
 
 export interface RepairRequest {
   id: string;
@@ -22,28 +20,6 @@ interface RepairResponse {
   status: string;
   message: string;
   updatedAt: number;
-}
-
-function saveRepairRequest(request: RepairRequest) {
-  try {
-    const raw = window.localStorage.getItem(REPAIRS_STORAGE_KEY);
-    const list: RepairRequest[] = raw ? JSON.parse(raw) : [];
-    list.unshift(request);
-    window.localStorage.setItem(REPAIRS_STORAGE_KEY, JSON.stringify(list));
-  } catch {
-    // ignore
-  }
-}
-
-function getRepairResponse(repairId: string): RepairResponse | null {
-  try {
-    const raw = window.localStorage.getItem(REPAIR_RESPONSES_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, RepairResponse>) : {};
-    const res = parsed?.[repairId];
-    return res ?? null;
-  } catch {
-    return null;
-  }
 }
 
 const services = [
@@ -87,8 +63,32 @@ export default function RepairSection() {
   const [lookupRef, setLookupRef] = useState('');
   const [lookupResult, setLookupResult] = useState<RepairResponse | null>(null);
   const [lookupError, setLookupError] = useState('');
+  const [copiedRef, setCopiedRef] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const submittedResponse = submittedRef ? getRepairResponse(submittedRef) : null;
+  const [submittedResponse, setSubmittedResponse] = useState<RepairResponse | null>(null);
+
+  useEffect(() => {
+    if (!submittedRef) return;
+    let cancelled = false;
+    api.repairs
+      .getStatus(submittedRef)
+      .then((res) => {
+        if (cancelled) return;
+        setSubmittedResponse({
+          repairId: res.id,
+          status: res.status,
+          message: res.message,
+          updatedAt: Date.parse(res.updatedAt),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setSubmittedResponse(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [submittedRef]);
 
   useLayoutEffect(() => {
     const ctx = gsap.context(() => {
@@ -169,7 +169,7 @@ export default function RepairSection() {
     return () => ctx.revert();
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitError('');
     const name = formData.name.trim();
@@ -180,26 +180,27 @@ export default function RepairSection() {
       setSubmitError('Please fill in all fields.');
       return;
     }
-    const id = `REP-${Date.now()}`;
-    const request: RepairRequest = {
-      id,
-      name,
-      device,
-      issue,
-      contact,
-      createdAt: Date.now(),
-    };
-    saveRepairRequest(request);
-    setSubmittedRef(id);
-    setFormData({ name: '', device: '', issue: '', contact: '' });
+    setSubmitting(true);
+    try {
+      const created = await api.repairs.create({ name, device, issue, contact });
+      setSubmittedRef(created.id);
+      setSubmittedResponse(null);
+      setFormData({ name: '', device: '', issue: '', contact: '' });
+    } catch (e2) {
+      setSubmitError(e2 instanceof Error ? e2.message : 'Could not submit repair request.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const resetForm = () => {
     setSubmittedRef(null);
     setSubmitError('');
+    setCopiedRef(false);
+    setSubmittedResponse(null);
   };
 
-  const handleLookup = (e: React.FormEvent) => {
+  const handleLookup = async (e: React.FormEvent) => {
     e.preventDefault();
     setLookupError('');
     const ref = lookupRef.trim();
@@ -208,13 +209,19 @@ export default function RepairSection() {
       setLookupResult(null);
       return;
     }
-    const res = getRepairResponse(ref);
-    if (!res) {
+    try {
+      const res = await api.repairs.getStatus(ref);
+      setLookupResult({
+        repairId: res.id,
+        status: res.status,
+        message: res.message,
+        updatedAt: Date.parse(res.updatedAt),
+      });
+      setLookupError('');
+    } catch {
       setLookupError('No admin response yet. Please check again later.');
       setLookupResult(null);
-      return;
     }
-    setLookupResult(res);
   };
 
   return (
@@ -288,6 +295,17 @@ export default function RepairSection() {
                 <p className="font-mono text-lg font-bold text-[#FFD700] mb-6">
                   {submittedRef}
                 </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(submittedRef);
+                    setCopiedRef(true);
+                    setTimeout(() => setCopiedRef(false), 1200);
+                  }}
+                  className="text-xs text-[#A8ACB8] hover:text-[#F4F6FA] underline underline-offset-4 mb-4"
+                >
+                  {copiedRef ? 'Copied reference' : 'Copy reference'}
+                </button>
                 {submittedResponse ? (
                   <div className="mt-4 text-left rounded-2xl bg-white/5 border border-white/10 p-4">
                     <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#A8ACB8] mb-2">
@@ -383,12 +401,12 @@ export default function RepairSection() {
                   Contact
                 </label>
                 <input
-                  type="email"
+                  type="text"
                   value={formData.contact}
                   onChange={(e) =>
                     setFormData({ ...formData, contact: e.target.value })
                   }
-                  placeholder="your@email.com"
+                  placeholder="Email or phone number"
                   className="w-full px-4 py-3 bg-[#1a1c22] border border-[#2a2d35] rounded-xl text-[#F4F6FA] placeholder:text-[#5a5d65] focus:border-[#FFD700] focus:outline-none transition-colors"
                 />
               </div>
@@ -399,9 +417,10 @@ export default function RepairSection() {
 
                   <button
                     type="submit"
+                    disabled={submitting}
                     className="group w-full flex items-center justify-center gap-2 px-6 py-4 bg-[#FFD700] text-[#070A15] font-medium rounded-full hover:bg-[#ffe44d] transition-colors mt-2"
                   >
-                    Get a quote
+                    {submitting ? 'Submitting…' : 'Get a quote'}
                     <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                   </button>
                 </form>

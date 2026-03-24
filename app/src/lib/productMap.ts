@@ -1,6 +1,6 @@
 import type { Product } from '../data/products';
 
-/** Shape returned by GET /api/products (Prisma JSON). */
+/** Shape returned by GET /api/products (Firestore-backed API). */
 export type ApiProductRow = {
   id: string;
   sku: string | null;

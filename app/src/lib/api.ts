@@ -73,6 +73,20 @@ export type OrderNotifyPayload = {
   onlineChannel?: string;
   customer: { name: string; email: string; phone: string; address: string };
   totalPhp: number;
+  items: { name: string; quantity: number; unitPrice: number }[];
+};
+
+export type RepairStatus = 'new' | 'quoted' | 'scheduled' | 'in_progress' | 'done';
+export type RepairTicket = {
+  id: string;
+  name: string;
+  device: string;
+  issue: string;
+  contact: string;
+  status: RepairStatus;
+  message: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export const api = {
@@ -93,6 +107,12 @@ export const api = {
         { method: 'POST', body: JSON.stringify(input) }
       ),
     me: () => request<{ id: string; name: string; email: string; role: string }>('/api/me'),
+    changePassword: (input: { currentPassword: string; newPassword: string }) =>
+      request<{ ok: true }>('/api/auth/change-password', { method: 'POST', body: JSON.stringify(input) }),
+    forgotPassword: (input: { email: string }) =>
+      request<{ ok: true }>('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify(input) }),
+    resetPassword: (input: { token: string; newPassword: string }) =>
+      request<{ ok: true }>('/api/auth/reset-password', { method: 'POST', body: JSON.stringify(input) }),
     /** Mint Firebase Auth custom token (uid = API user id) for Firestore cart/checkout. */
     firebaseCustomToken: () => request<{ token: string }>('/api/auth/firebase-custom-token'),
   },
@@ -109,6 +129,17 @@ export const api = {
     notifyEmail: (input: OrderNotifyPayload) =>
       request<{ ok: true }>('/api/orders/notify-email', { method: 'POST', body: JSON.stringify(input) }),
   },
+  repairs: {
+    create: (input: { name: string; device: string; issue: string; contact: string }) =>
+      request<{ id: string; status: RepairStatus; createdAt: string }>('/api/repairs', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    getStatus: (id: string) =>
+      request<{ id: string; status: RepairStatus; message: string; createdAt: string; updatedAt: string }>(
+        `/api/repairs/${encodeURIComponent(id)}/status`
+      ),
+  },
   admin: {
     createProduct: (input: AdminProductPayload) =>
       request<ApiProductRow>('/api/admin/products', { method: 'POST', body: JSON.stringify(input) }),
@@ -119,6 +150,12 @@ export const api = {
       }),
     deleteProduct: (id: string) => request<{ ok: true }>(`/api/admin/products/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     firestoreOrders: () => request<Record<string, unknown>[]>('/api/admin/firestore-orders'),
+    repairs: () => request<RepairTicket[]>('/api/admin/repairs'),
+    updateRepair: (id: string, input: { status: RepairStatus; message?: string }) =>
+      request<{ id: string; status: RepairStatus; message: string; updatedAt: string }>(
+        `/api/admin/repairs/${encodeURIComponent(id)}`,
+        { method: 'PATCH', body: JSON.stringify(input) }
+      ),
   },
 };
 

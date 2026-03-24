@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, ShoppingCart, Cpu, Search, User, LogOut } from 'lucide-react';
+import { Menu, X, ShoppingCart, Cpu, Search, User, LogOut, Settings } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 
@@ -49,6 +49,7 @@ export default function Navigation() {
     { id: 'devices', name: 'Devices', path: '/category/devices' },
     { id: 'consoles', name: 'Consoles', path: '/category/consoles' },
   ];
+  const isAdmin = user?.role === 'ADMIN';
 
   const isOnListingPage = useMemo(
     () => location.pathname.startsWith('/category/'),
@@ -88,29 +89,40 @@ export default function Navigation() {
           <div className="hidden lg:flex items-center gap-8">
             <div className="relative group">
               <button className="text-sm text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors flex items-center gap-1">
-                Shop
+                {isAdmin ? 'Inventory' : 'Shop'}
               </button>
               {/* Dropdown */}
               <div className="absolute top-full left-0 mt-2 w-48 bg-[#111318] border border-white/10 rounded-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
-                {categories.map((cat) => (
+                {isAdmin ? (
                   <Link
-                    key={cat.id}
-                    to={cat.path}
+                    to="/admin"
                     className="block px-4 py-3 text-sm text-[#A8ACB8] hover:text-[#F4F6FA] hover:bg-white/5 transition-colors"
                   >
-                    {cat.name}
+                    Open inventory
                   </Link>
-                ))}
+                ) : (
+                  categories.map((cat) => (
+                    <Link
+                      key={cat.id}
+                      to={cat.path}
+                      className="block px-4 py-3 text-sm text-[#A8ACB8] hover:text-[#F4F6FA] hover:bg-white/5 transition-colors"
+                    >
+                      {cat.name}
+                    </Link>
+                  ))
+                )}
               </div>
             </div>
             
-            <Link
-              to="/pc-builder"
-              className="text-sm text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors flex items-center gap-1"
-            >
-              <Cpu className="w-4 h-4" />
-              PC Builder
-            </Link>
+            {!isAdmin && (
+              <Link
+                to="/pc-builder"
+                className="text-sm text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors flex items-center gap-1"
+              >
+                <Cpu className="w-4 h-4" />
+                PC Builder
+              </Link>
+            )}
             
             <button
               onClick={() => scrollToSection('repair')}
@@ -158,14 +170,16 @@ export default function Navigation() {
               </form>
             )}
 
-            <Link
-              to="/cart"
-              className="hidden md:flex items-center gap-2 text-sm text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors"
-              aria-label="Open cart"
-            >
-              <ShoppingCart className="w-4 h-4" />
-              <span className="font-mono text-xs">({totalItems})</span>
-            </Link>
+            {!isAdmin && (
+              <Link
+                to="/cart"
+                className="hidden md:flex items-center gap-2 text-sm text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors"
+                aria-label="Open cart"
+              >
+                <ShoppingCart className="w-4 h-4" />
+                <span className="font-mono text-xs">({totalItems})</span>
+              </Link>
+            )}
 
             {!user ? (
               <Link
@@ -178,15 +192,20 @@ export default function Navigation() {
                 <span>Login</span>
               </Link>
             ) : (
-              <button
-                type="button"
-                onClick={() => logout()}
-                className="hidden md:flex items-center gap-2 text-sm text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors"
-                aria-label="Logout"
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="max-w-[10rem] truncate">{user.name}</span>
-              </button>
+              <div className="hidden md:flex items-center gap-3">
+                <Link to="/settings" className="text-[#A8ACB8] hover:text-[#F4F6FA]" aria-label="Settings">
+                  <Settings className="w-4 h-4" />
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => logout()}
+                  className="flex items-center gap-2 text-sm text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors"
+                  aria-label="Logout"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span className="max-w-[10rem] truncate">{user.name}</span>
+                </button>
+              </div>
             )}
 
             {/* Mobile menu button */}
@@ -238,27 +257,39 @@ export default function Navigation() {
           <p className="font-mono text-xs uppercase tracking-[0.12em] text-[#A8ACB8] mb-4">
             Shop Categories
           </p>
-          {categories.map((cat) => (
+          {isAdmin ? (
             <Link
-              key={cat.id}
-              to={cat.path}
+              to="/admin"
               onClick={() => setIsMenuOpen(false)}
               className="text-2xl font-['Space_Grotesk'] font-semibold text-[#F4F6FA] hover:text-[#FFD700] transition-colors"
             >
-              {cat.name}
+              Inventory
             </Link>
-          ))}
+          ) : (
+            categories.map((cat) => (
+              <Link
+                key={cat.id}
+                to={cat.path}
+                onClick={() => setIsMenuOpen(false)}
+                className="text-2xl font-['Space_Grotesk'] font-semibold text-[#F4F6FA] hover:text-[#FFD700] transition-colors"
+              >
+                {cat.name}
+              </Link>
+            ))
+          )}
           
           <div className="w-16 h-[1px] bg-white/20 my-4" />
           
-          <Link
-            to="/pc-builder"
-            onClick={() => setIsMenuOpen(false)}
-            className="flex items-center gap-2 text-2xl font-['Space_Grotesk'] font-semibold text-[#FFD700] hover:text-[#ffe44d] transition-colors"
-          >
-            <Cpu className="w-6 h-6" />
-            PC Builder
-          </Link>
+          {!isAdmin && (
+            <Link
+              to="/pc-builder"
+              onClick={() => setIsMenuOpen(false)}
+              className="flex items-center gap-2 text-2xl font-['Space_Grotesk'] font-semibold text-[#FFD700] hover:text-[#ffe44d] transition-colors"
+            >
+              <Cpu className="w-6 h-6" />
+              PC Builder
+            </Link>
+          )}
           
           <button
             onClick={() => scrollToSection('repair')}
@@ -273,10 +304,12 @@ export default function Navigation() {
             Support
           </button>
           
-          <Link to="/cart" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 mt-8 text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors">
-            <ShoppingCart className="w-5 h-5" />
-            <span className="font-mono text-sm">Cart ({totalItems})</span>
-          </Link>
+          {!isAdmin && (
+            <Link to="/cart" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 mt-8 text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors">
+              <ShoppingCart className="w-5 h-5" />
+              <span className="font-mono text-sm">Cart ({totalItems})</span>
+            </Link>
+          )}
 
           {!user ? (
             <Link

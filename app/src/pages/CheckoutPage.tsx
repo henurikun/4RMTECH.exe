@@ -51,6 +51,7 @@ export default function CheckoutPage() {
   const [placedTotal, setPlacedTotal] = useState(0);
   const [placing, setPlacing] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [emailWarning, setEmailWarning] = useState('');
 
   const shipping = useMemo(() => (subtotal > 0 ? 99 : 0), [subtotal]);
   const total = useMemo(() => subtotal + shipping, [subtotal, shipping]);
@@ -255,6 +256,7 @@ export default function CheckoutPage() {
     }
 
     setError('');
+    setEmailWarning('');
     setFinalizing(true);
     try {
       await createPaymentFirebase(
@@ -263,19 +265,28 @@ export default function CheckoutPage() {
         user.id,
         paymentChoice === 'online' ? onlineChannel ?? undefined : undefined
       );
-      await api.orders.notifyEmail({
-        orderId: placedOrderId,
-        orderNumber,
-        paymentFlow: paymentChoice === 'cod' ? 'cod' : 'online',
-        onlineChannel: paymentChoice === 'online' ? onlineChannel ?? undefined : undefined,
-        customer: {
-          name: form.name.trim(),
-          email: form.email.trim(),
-          phone: form.phone.trim(),
-          address: form.address.trim(),
-        },
-        totalPhp: placedTotal || summaryGrand,
-      });
+      try {
+        await api.orders.notifyEmail({
+          orderId: placedOrderId,
+          orderNumber,
+          paymentFlow: paymentChoice === 'cod' ? 'cod' : 'online',
+          onlineChannel: paymentChoice === 'online' ? onlineChannel ?? undefined : undefined,
+          customer: {
+            name: form.name.trim(),
+            email: form.email.trim(),
+            phone: form.phone.trim(),
+            address: form.address.trim(),
+          },
+          totalPhp: placedTotal || summaryGrand,
+          items: summaryLines.map((l) => ({
+            name: l.name,
+            quantity: l.quantity,
+            unitPrice: l.unitPrice,
+          })),
+        });
+      } catch {
+        setEmailWarning('Order confirmed, but email notification could not be sent. Please check SMTP settings.');
+      }
       setSuccessOrderId(orderNumber);
       setStep('done');
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -399,6 +410,7 @@ export default function CheckoutPage() {
                 </section>
 
                 {error && <p className="text-sm text-red-400">{error}</p>}
+                {emailWarning && <p className="text-sm text-amber-300">{emailWarning}</p>}
 
                 <button
                   type="submit"

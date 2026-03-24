@@ -11,6 +11,8 @@ import AdminPage from './pages/AdminPage';
 import CartPage from './pages/CartPage';
 import CheckoutPage from './pages/CheckoutPage';
 import LoginPage from './pages/LoginPage';
+import AccountSettingsPage from './pages/AccountSettingsPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -63,6 +65,8 @@ function App() {
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/settings" element={<AccountSettingsPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         </Routes>
       </div>
     </BrowserRouter>

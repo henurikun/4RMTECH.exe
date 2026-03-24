@@ -1,12 +1,55 @@
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Minus, Plus, Trash2 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
+import { useCatalog } from '../context/CatalogContext';
+import { getStockQuantity, isPurchasable } from '../lib/productAvailability';
+import { useAuth } from '../context/AuthContext';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(amount);
 
 export default function CartPage() {
   const { items, getProduct, updateQuantity, removeItem, subtotal, totalItems, clearCart } = useCart();
+  const { products: catalogProducts } = useCatalog();
+  const { user } = useAuth();
+
+  if (user?.role === 'ADMIN') {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6">
+        <div className="max-w-md text-center space-y-4">
+          <h1 className="font-['Space_Grotesk'] text-2xl font-bold text-[#F4F6FA]">Cart disabled for admin</h1>
+          <p className="text-[#A8ACB8]">Administrator accounts cannot place customer orders.</p>
+          <Link to="/admin" className="inline-flex px-6 py-3 rounded-full bg-[#FFD700] text-[#070A15] font-semibold">
+            Open inventory
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const stockIssues = items
+    .map((item) => {
+      const cartProduct = getProduct(item.productId);
+      const live = catalogProducts.find((p) => p.id === item.productId);
+      const product = live ?? cartProduct;
+      if (!product) {
+        return { productId: item.productId, message: `Item "${item.productId}" is no longer available.` };
+      }
+      if (!isPurchasable(product)) {
+        return { productId: item.productId, message: `${product.name} is out of stock.` };
+      }
+      const stock = getStockQuantity(product);
+      if (item.quantity > stock) {
+        return {
+          productId: item.productId,
+          message: `${product.name} has only ${stock} in stock, but ${item.quantity} is in your cart.`,
+        };
+      }
+      return null;
+    })
+    .filter(Boolean) as { productId: string; message: string }[];
+
+  const canCheckout = stockIssues.length === 0;
 
   if (items.length === 0) {
     return (
@@ -82,6 +125,9 @@ export default function CartPage() {
                     {product.name}
                   </h3>
                   <p className="text-sm text-[#A8ACB8] mt-0.5">{product.category}</p>
+                  {!isPurchasable(catalogProducts.find((p) => p.id === item.productId) ?? product) && (
+                    <p className="text-xs text-red-400 mt-1">Out of stock</p>
+                  )}
                   <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
                     <div className="flex items-center gap-2">
                       <button
@@ -125,16 +171,38 @@ export default function CartPage() {
         </div>
 
         <div className="max-w-4xl mx-auto mt-10 pt-6 border-t border-white/10">
+          {stockIssues.length > 0 && (
+            <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-4">
+              <p className="text-sm font-semibold text-red-300 mb-2">Please fix these stock issues before checkout:</p>
+              <ul className="space-y-1">
+                {stockIssues.map((issue) => (
+                  <li key={issue.productId} className="text-sm text-red-200">
+                    - {issue.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
             <p className="text-[#A8ACB8]">
               Subtotal: <span className="font-['Space_Grotesk'] text-xl font-bold text-[#FFD700]">{formatCurrency(subtotal)}</span>
             </p>
-            <Link
-              to="/checkout"
-              className="inline-flex justify-center items-center px-8 py-4 bg-[#FFD700] text-[#070A15] font-semibold rounded-full hover:bg-[#ffe44d] transition-colors"
-            >
-              Proceed to checkout
-            </Link>
+            {canCheckout ? (
+              <Link
+                to="/checkout"
+                className="inline-flex justify-center items-center px-8 py-4 bg-[#FFD700] text-[#070A15] font-semibold rounded-full hover:bg-[#ffe44d] transition-colors"
+              >
+                Proceed to checkout
+              </Link>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="inline-flex justify-center items-center px-8 py-4 bg-white/10 text-[#A8ACB8] font-semibold rounded-full cursor-not-allowed"
+              >
+                Resolve stock issues
+              </button>
+            )}
           </div>
         </div>
       </main>

@@ -21,6 +21,10 @@ import {
   type PCComponent 
 } from '../data/pcComponents';
 import { useCart } from '../context/CartContext';
+import { useCatalog } from '../context/CatalogContext';
+import { getStockQuantity, isPurchasable } from '../lib/productAvailability';
+import type { Product } from '../data/products';
+import { useAuth } from '../context/AuthContext';
 
 interface BuildConfig {
   cpu: PCComponent | null;
@@ -61,7 +65,9 @@ const categoryIcons: Record<string, React.ElementType> = {
 };
 
 export default function PCBuilderPage() {
-  const { addItem } = useCart();
+  const { addItem, totalItems } = useCart();
+  const { products: catalogProducts } = useCatalog();
+  const { user } = useAuth();
   const [build, setBuild] = useState<BuildConfig>(initialBuild);
   const [activeCategory, setActiveCategory] = useState<string>('cpu');
   const [budget, setBudget] = useState<number>(30000);
@@ -130,17 +136,22 @@ export default function PCBuilderPage() {
     
     selectedComponents.forEach((component) => {
       if (component) {
-        const productData = {
-          id: component.id,
-          name: component.name,
-          category: component.category,
-          price: component.price,
-          image: component.image,
-          specs: component.specs,
-          description: component.description,
-          inStock: true
-        };
-        addItem(component.id, 1, productData);
+        const liveMatch = findCatalogMatch(component, catalogProducts);
+        if (liveMatch) {
+          addItem(liveMatch.id, 1, liveMatch);
+        } else {
+          const productData: Product = {
+            id: component.id,
+            name: component.name,
+            category: component.category,
+            price: component.price,
+            image: component.image,
+            specs: component.specs,
+            description: component.description,
+            inStock: true
+          };
+          addItem(component.id, 1, productData);
+        }
       }
     });
 
@@ -442,6 +453,20 @@ export default function PCBuilderPage() {
     setBudget((prev) => Math.max(prev, preset.total));
   };
 
+  if (user?.role === 'ADMIN') {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6">
+        <div className="max-w-md text-center space-y-4">
+          <h1 className="font-['Space_Grotesk'] text-2xl font-bold text-[#F4F6FA]">PC Builder disabled for admin</h1>
+          <p className="text-[#A8ACB8]">Administrator accounts should use inventory tools, not customer shopping flows.</p>
+          <Link to="/admin" className="inline-flex px-6 py-3 rounded-full bg-[#FFD700] text-[#070A15] font-semibold">
+            Open inventory
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen">
       {/* Header */}
@@ -459,6 +484,10 @@ export default function PCBuilderPage() {
               PC Builder
             </h1>
           </div>
+          <Link to="/cart" className="flex items-center gap-2 text-[#A8ACB8] hover:text-[#F4F6FA] transition-colors">
+            <ShoppingCart className="w-5 h-5" />
+            <span className="font-mono text-sm">({totalItems})</span>
+          </Link>
           
           <div className="flex items-center gap-4">
             <button
@@ -635,16 +664,18 @@ export default function PCBuilderPage() {
               {allComponents[activeCategory as keyof typeof allComponents]?.map((component) => {
                 const isSelected = build[activeCategory as keyof BuildConfig]?.id === component.id;
                 const isOverBudget = totalPrice - (build[activeCategory as keyof BuildConfig]?.price || 0) + component.price > budget;
+                const liveMatch = findCatalogMatch(component, catalogProducts);
+                const outOfStock = liveMatch ? !isPurchasable(liveMatch) : false;
                 
                 return (
                   <button
                     key={component.id}
                     onClick={() => selectComponent(activeCategory, component)}
-                    disabled={isOverBudget && !isSelected}
+                    disabled={(isOverBudget && !isSelected) || (outOfStock && !isSelected)}
                     className={`relative p-5 rounded-2xl border text-left transition-all ${
                       isSelected
                         ? 'bg-[#FFD700]/10 border-[#FFD700]'
-                        : isOverBudget
+                        : isOverBudget || outOfStock
                         ? 'bg-white/5 border-white/5 opacity-50'
                         : 'bg-[#111318] border-white/5 hover:border-white/20'
                     }`}
@@ -667,6 +698,11 @@ export default function PCBuilderPage() {
                     </div>
                     
                     <h3 className="font-semibold text-[#F4F6FA] mb-2">{component.name}</h3>
+                    {liveMatch && (
+                      <p className={`text-xs mb-2 ${outOfStock ? 'text-red-400' : 'text-green-400'}`}>
+                        {outOfStock ? 'Out of stock' : `In stock: ${getStockQuantity(liveMatch)}`}
+                      </p>
+                    )}
                     
                     <div className="grid grid-cols-2 gap-1 mb-3">
                       {Object.entries(component.specs).slice(0, 3).map(([key, value]) => (
@@ -825,5 +861,14 @@ export default function PCBuilderPage() {
         </aside>
       </div>
     </div>
+  );
+}
+
+function findCatalogMatch(component: PCComponent, catalogProducts: Product[]): Product | undefined {
+  const byId = catalogProducts.find((p) => p.id === component.id);
+  if (byId) return byId;
+  const nameNeedle = component.name.trim().toLowerCase();
+  return catalogProducts.find(
+    (p) => p.name.trim().toLowerCase() === nameNeedle && p.category === component.category
   );
 }

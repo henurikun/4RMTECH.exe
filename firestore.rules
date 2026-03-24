@@ -1,14 +1,36 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function authed() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return authed() && request.auth.uid == uid;
+    }
+    function isAdmin() {
+      return authed() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN';
+    }
+
+    match /users/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
     match /users/{userId}/cartItems/{itemId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isOwner(userId);
+    }
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
     match /orders/{orderId} {
-      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
-      allow update: if request.auth != null && request.auth.uid == resource.data.userId;
-      allow delete: if false;
+      allow read: if isAdmin() || (authed() && resource.data.userId == request.auth.uid);
+      allow create: if authed() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin() || (authed() && resource.data.userId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+    match /repairs/{repairId} {
+      allow create: if true;
+      allow read: if isAdmin();
+      allow update, delete: if isAdmin();
     }
   }
 }

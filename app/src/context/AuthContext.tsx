@@ -1,8 +1,15 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import {
+  GoogleAuthProvider,
+  createUserWithEmailAndPassword,
+  onIdTokenChanged,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  updateProfile,
+} from 'firebase/auth';
 import { auth } from '../firebase';
 import { api, setToken } from '../lib/api';
-import { syncFirebaseSession } from '../lib/firebaseSession';
 
 type UserRole = 'USER' | 'ADMIN';
 
@@ -30,26 +37,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
 
   const refreshUser = useCallback(async () => {
+    const fb = auth.currentUser;
+    if (!fb) {
+      setToken(null);
+      setUser(null);
+      return;
+    }
     try {
+      const idToken = await fb.getIdToken();
+      setToken(idToken);
       const me = await api.auth.me();
       setUser({ id: me.id, email: me.email, name: me.name, role: me.role as UserRole });
-      await syncFirebaseSession();
     } catch {
+      setToken(null);
       setUser(null);
       signOut(auth).catch(() => {});
     }
   }, []);
 
+  React.useEffect(() => {
+    const unsub = onIdTokenChanged(auth, () => {
+      void refreshUser();
+    });
+    return () => unsub();
+  }, [refreshUser]);
+
   const login = useCallback(async ({ email, password }: { email: string; password: string }) => {
-    const res = await api.auth.login({ email, password });
-    setToken(res.token);
+    await signInWithEmailAndPassword(auth, email, password);
     await refreshUser();
   }, [refreshUser]);
 
   const register = useCallback(
     async ({ name, email, password }: { name: string; email: string; password: string }) => {
-      const res = await api.auth.register({ name, email, password });
-      setToken(res.token);
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      await updateProfile(cred.user, { displayName: name });
       await refreshUser();
     },
     [refreshUser]
@@ -57,10 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithGoogle = useCallback(async () => {
     const provider = new GoogleAuthProvider();
-    const cred = await signInWithPopup(auth, provider);
-    const idToken = await cred.user.getIdToken();
-    const res = await api.auth.google({ idToken });
-    setToken(res.token);
+    await signInWithPopup(auth, provider);
     await refreshUser();
   }, [refreshUser]);
 

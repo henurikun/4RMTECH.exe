@@ -168,6 +168,13 @@ export default function LoginPage() {
                 <p className="text-[11px] text-[#6B7280]">Min 6 characters.</p>
               )}
             </div>
+            {mode === 'login' && (
+              <div className="text-right">
+                <Link to="/forgot-password" className="text-xs text-[#A8ACB8] hover:text-[#F4F6FA] underline">
+                  Forgot password?
+                </Link>
+              </div>
+            )}
 
             {error && <p className="text-sm text-red-400">{error}</p>}
 

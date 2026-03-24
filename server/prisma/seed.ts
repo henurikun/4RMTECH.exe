@@ -75,8 +75,17 @@ async function main() {
     });
   }
 
+  // Backfill legacy rows: previously in-stock items may still have zero quantity.
+  // Give them a default quantity so frontend stock filtering remains consistent.
+  const backfill = await prisma.product.updateMany({
+    where: { inStock: true, stockQuantity: 0 },
+    data: { stockQuantity: 10 },
+  });
+
   // eslint-disable-next-line no-console
   console.log('Seed complete.');
+  // eslint-disable-next-line no-console
+  console.log(`Backfilled legacy stock rows: ${backfill.count}`);
   // eslint-disable-next-line no-console
   console.log(`Admin login: ${admin.email} / ${adminPass}`);
   // eslint-disable-next-line no-console

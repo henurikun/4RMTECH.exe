@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Product } from '../data/products';
 import { Link, useNavigate } from 'react-router-dom';
-import { ClipboardList, Filter, MessageSquare, Plus, Pencil, Trash2, X, ArrowLeft, Package, Inbox } from 'lucide-react';
+import { ClipboardList, Filter, MessageSquare, Plus, Pencil, Trash2, X, ArrowLeft, Package, Inbox, Upload } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCatalog } from '../context/CatalogContext';
-import { api } from '../lib/api';
+import { api, type RepairTicket } from '../lib/api';
 
 type Mode = 'all' | 'laptops' | 'wearables' | 'audio' | 'cameras' | 'consoles' | 'devices';
 type Panel = 'products' | 'inbox';
 type InboxTab = 'invoices' | 'repairs';
 
 type RepairStatus = 'new' | 'quoted' | 'scheduled' | 'in_progress' | 'done';
+type CsvProductRow = {
+  itemName: string;
+  category: Mode;
+  price: number;
+  specialPrice: number | null;
+  stockQuantity: number;
+};
 
 interface RepairRequest {
   id: string;
@@ -28,37 +35,15 @@ interface RepairResponse {
   updatedAt: number;
 }
 
-const REPAIRS_STORAGE_KEY = '4rmtech_repairs';
-const REPAIR_RESPONSES_STORAGE_KEY = '4rmtech_repair_responses';
-
-function loadRepairs(): RepairRequest[] {
-  try {
-    const raw = window.localStorage.getItem(REPAIRS_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as RepairRequest[]) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function loadRepairResponses(): Record<string, RepairResponse> {
-  try {
-    const raw = window.localStorage.getItem(REPAIR_RESPONSES_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, RepairResponse>) : {};
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveRepairResponse(response: RepairResponse) {
-  try {
-    const current = loadRepairResponses();
-    current[response.repairId] = response;
-    window.localStorage.setItem(REPAIR_RESPONSES_STORAGE_KEY, JSON.stringify(current));
-  } catch {
-    // ignore
-  }
+function mapTicketToRepairRequest(t: RepairTicket): RepairRequest {
+  return {
+    id: t.id,
+    name: t.name,
+    device: t.device,
+    issue: t.issue,
+    contact: t.contact,
+    createdAt: Date.parse(t.createdAt),
+  };
 }
 
 interface FormState {
@@ -135,6 +120,83 @@ function formStateToProduct(form: FormState): Product {
   };
 }
 
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    const next = line[i + 1];
+    if (ch === '"') {
+      if (inQuotes && next === '"') {
+        cur += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === ',' && !inQuotes) {
+      out.push(cur.trim());
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+function toMode(input: string): Mode {
+  const s = input.trim().toLowerCase();
+  if (s.includes('laptop')) return 'laptops';
+  if (s.includes('wear')) return 'wearables';
+  if (s.includes('audio') || s.includes('speaker') || s.includes('head')) return 'audio';
+  if (s.includes('camera')) return 'cameras';
+  if (s.includes('console') || s.includes('game')) return 'consoles';
+  if (s.includes('device') || s.includes('phone') || s.includes('tablet')) return 'devices';
+  return 'devices';
+}
+
+function parseMoney(input: string): number {
+  const cleaned = input.replace(/[^\d.-]/g, '');
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
+function parseCsvProducts(text: string): CsvProductRow[] {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length < 2) return [];
+  const header = parseCsvLine(lines[0]).map((h) => h.toLowerCase().replace(/\s+/g, ''));
+  const idxName = header.findIndex((h) => ['itemname', 'name', 'productname', 'title'].includes(h));
+  const idxCategory = header.findIndex((h) => ['category', 'type', 'productcategory'].includes(h));
+  const idxPrice = header.findIndex((h) => ['price', 'srp', 'regularprice'].includes(h));
+  const idxSpecial = header.findIndex((h) => ['specialprice', 'saleprice', 'promo', 'promoprice'].includes(h));
+  const idxStock = header.findIndex((h) => ['stock', 'stockquantity', 'qty', 'quantity'].includes(h));
+  if (idxName < 0 || idxPrice < 0) return [];
+
+  const rows: CsvProductRow[] = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const cols = parseCsvLine(lines[i]);
+    const itemName = (cols[idxName] ?? '').trim();
+    if (!itemName) continue;
+    const price = parseMoney(cols[idxPrice] ?? '');
+    const specialRaw = idxSpecial >= 0 ? parseMoney(cols[idxSpecial] ?? '') : 0;
+    const stockRaw = idxStock >= 0 ? Math.floor(Number(cols[idxStock] ?? '0')) : 10;
+    rows.push({
+      itemName,
+      category: toMode(idxCategory >= 0 ? cols[idxCategory] ?? '' : ''),
+      price,
+      specialPrice: specialRaw > 0 ? specialRaw : null,
+      stockQuantity: Number.isFinite(stockRaw) && stockRaw >= 0 ? stockRaw : 10,
+    });
+  }
+  return rows;
+}
+
 export default function AdminPage() {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
@@ -147,22 +209,46 @@ export default function AdminPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [formState, setFormState] = useState<FormState>(emptyForm);
+  const [inventorySearch, setInventorySearch] = useState('');
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [uploadingCsv, setUploadingCsv] = useState(false);
+  const [uploadSummary, setUploadSummary] = useState('');
 
   const [repairs, setRepairs] = useState<RepairRequest[]>([]);
   const [repairResponses, setRepairResponses] = useState<Record<string, RepairResponse>>({});
+  const [repairsLoading, setRepairsLoading] = useState(false);
   const [selectedRepairId, setSelectedRepairId] = useState<string | null>(null);
   const [replyStatus, setReplyStatus] = useState<RepairStatus>('new');
   const [replyMessage, setReplyMessage] = useState('');
   const [replySaved, setReplySaved] = useState('');
 
+  const loadRepairsFromApi = async () => {
+    setRepairsLoading(true);
+    try {
+      const rows = await api.admin.repairs();
+      setRepairs(rows.map(mapTicketToRepairRequest));
+      const mapped: Record<string, RepairResponse> = {};
+      rows.forEach((r) => {
+        mapped[r.id] = {
+          repairId: r.id,
+          status: r.status,
+          message: r.message ?? '',
+          updatedAt: Date.parse(r.updatedAt),
+        };
+      });
+      setRepairResponses(mapped);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Failed to load repairs');
+    } finally {
+      setRepairsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const list = loadRepairs();
-    setRepairs(list);
-    setRepairResponses(loadRepairResponses());
-  }, []);
+    if (panel !== 'inbox' || inboxTab !== 'repairs') return;
+    void loadRepairsFromApi();
+  }, [panel, inboxTab]);
 
   useEffect(() => {
     if (panel !== 'inbox' || inboxTab !== 'invoices') return;
@@ -204,6 +290,16 @@ export default function AdminPage() {
         : products.filter(product => product.category === mode),
     [mode, products]
   );
+  const displayedProducts = useMemo(() => {
+    const q = inventorySearch.trim().toLowerCase();
+    if (!q) return filteredProducts;
+    return filteredProducts.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q) ||
+        String(p.price).includes(q)
+    );
+  }, [filteredProducts, inventorySearch]);
 
   const startAdd = () => {
     setEditingId(null);
@@ -237,16 +333,16 @@ export default function AdminPage() {
 
   const saveRepairReply = () => {
     if (!selectedRepairId) return;
-    const response: RepairResponse = {
-      repairId: selectedRepairId,
-      status: replyStatus,
-      message: replyMessage.trim(),
-      updatedAt: Date.now(),
-    };
-    saveRepairResponse(response);
-    setRepairResponses(loadRepairResponses());
-    setReplySaved('Saved.');
-    setTimeout(() => setReplySaved(''), 1200);
+    void api.admin
+      .updateRepair(selectedRepairId, { status: replyStatus, message: replyMessage.trim() })
+      .then(async () => {
+        await loadRepairsFromApi();
+        setReplySaved('Saved.');
+        setTimeout(() => setReplySaved(''), 1200);
+      })
+      .catch((e) => {
+        setSaveError(e instanceof Error ? e.message : 'Failed to save reply');
+      });
   };
 
   const handleChange = (field: keyof FormState, value: string) => {
@@ -305,6 +401,42 @@ export default function AdminPage() {
       setSaveError(e instanceof Error ? e.message : 'Save failed');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCsvUpload = async (file: File | null) => {
+    if (!file) return;
+    setSaveError('');
+    setUploadSummary('');
+    setUploadingCsv(true);
+    try {
+      const text = await file.text();
+      const rows = parseCsvProducts(text);
+      if (rows.length === 0) throw new Error('No valid rows found. Make sure CSV has item name and price columns.');
+      let success = 0;
+      let failed = 0;
+      for (const row of rows) {
+        try {
+          await api.admin.createProduct({
+            name: row.itemName,
+            category: row.category,
+            price: row.price,
+            originalPrice: row.specialPrice,
+            stockQuantity: row.stockQuantity,
+            description: '',
+            imageUrl: '/images/laptop_desk.jpg',
+          });
+          success += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      await refetch();
+      setUploadSummary(`CSV import complete: ${success} added, ${failed} failed.`);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'CSV upload failed');
+    } finally {
+      setUploadingCsv(false);
     }
   };
 
@@ -371,7 +503,7 @@ export default function AdminPage() {
                   Admin Product Manager
                 </h1>
                 <p className="text-xs text-[#A8ACB8]">
-                  Products are stored in PostgreSQL via the API.
+                  Products are stored in Firestore via the API.
                 </p>
               </div>
             </div>
@@ -448,112 +580,104 @@ export default function AdminPage() {
                   )
                 )}
               </div>
+              <input
+                value={inventorySearch}
+                onChange={(e) => setInventorySearch(e.target.value)}
+                placeholder="Search inventory..."
+                className="ml-auto px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm text-[#F4F6FA] placeholder:text-[#6B7280] focus:outline-none focus:border-[#FFD700]"
+              />
+              <label className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA] cursor-pointer">
+                <Upload className="w-4 h-4" />
+                {uploadingCsv ? 'Uploading CSV...' : 'Upload CSV'}
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  disabled={uploadingCsv}
+                  onChange={(e) => {
+                    void handleCsvUpload(e.target.files?.[0] ?? null);
+                    e.currentTarget.value = '';
+                  }}
+                />
+              </label>
             </div>
+            {uploadSummary && <p className="mt-3 text-sm text-green-400">{uploadSummary}</p>}
           </section>
 
-          {/* Products grid */}
+          {/* Inventory table */}
           <main className="px-6 lg:px-12 py-10">
-            {filteredProducts.length === 0 ? (
+            {displayedProducts.length === 0 ? (
               <div className="text-center py-20">
                 <p className="text-[#A8ACB8] text-lg">No products in this view.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredProducts.map(product => (
-                  <div
-                    key={product.id}
-                    className="group bg-[#111318] rounded-2xl overflow-hidden border border-white/5 hover:border-[#FFD700]/30 transition-all duration-300"
-                  >
-                    {/* Image */}
-                    <div className="relative aspect-[4/3] overflow-hidden">
-                      <img
-                        src={product.image}
-                        alt={product.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
-                      {product.badge && (
-                        <div className="absolute top-4 left-4 px-3 py-1 bg-[#FFD700] text-[#070A15] text-xs font-bold rounded-full">
-                          {product.badge}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Content */}
-                    <div className="p-6 space-y-4">
-                      <div>
-                        <h3 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA] mb-1">
-                          {product.name}
-                        </h3>
-                        <p className="text-xs uppercase tracking-wide text-[#A8ACB8]">
-                          {product.category}
-                        </p>
-                      </div>
-
-                      <p className="text-[#A8ACB8] text-sm line-clamp-2">{product.description}</p>
-
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        {Object.entries(product.specs)
-                          .slice(0, 4)
-                          .map(([key, value]) => (
-                            <div key={key}>
-                              <span className="text-[#A8ACB8]">{key}:</span>
-                              <span className="text-[#F4F6FA] ml-1">{value}</span>
-                            </div>
-                          ))}
-                      </div>
-
-                      <div className="flex items-center justify-between pt-3 border-t border-white/5">
-                        <div>
-                          <span className="font-['Space_Grotesk'] text-xl font-bold text-[#FFD700]">
+              <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#111318]">
+                <table className="w-full text-sm">
+                  <thead className="bg-white/5 text-[#A8ACB8]">
+                    <tr>
+                      <th className="text-left px-4 py-3">Name</th>
+                      <th className="text-left px-4 py-3">Price</th>
+                      <th className="text-left px-4 py-3">Category</th>
+                      <th className="text-left px-4 py-3">Stock Quantity</th>
+                      <th className="text-right px-4 py-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedProducts.map((product) => {
+                      const lowStock = (product.stockQuantity ?? 0) > 0 && (product.stockQuantity ?? 0) <= 5;
+                      return (
+                        <tr
+                          key={product.id}
+                          className={`${lowStock ? 'bg-red-500/10' : ''} border-t border-white/5`}
+                        >
+                          <td className="px-4 py-3 text-[#F4F6FA]">{product.name}</td>
+                          <td className="px-4 py-3 text-[#FFD700] font-semibold">
                             ₱{product.price.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
-                          </span>
-                          {product.originalPrice && (
-                            <span className="ml-2 text-xs text-[#A8ACB8] line-through">
-                              ₱
-                              {product.originalPrice.toLocaleString('en-PH', {
-                                maximumFractionDigits: 0,
-                              })}
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => startEdit(product)}
-                            className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-[#F4F6FA] transition-colors"
-                            title="Edit product"
-                            aria-label={`Edit ${product.name}`}
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(product.id)}
-                            className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
-                            title="Delete product"
-                            aria-label={`Delete ${product.name}`}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                          </td>
+                          <td className="px-4 py-3 text-[#A8ACB8] uppercase">{product.category}</td>
+                          <td className={`px-4 py-3 ${lowStock ? 'text-red-300 font-semibold' : 'text-[#F4F6FA]'}`}>
+                            {product.stockQuantity ?? 0}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => startEdit(product)}
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-[#F4F6FA] transition-colors"
+                                title="Edit product"
+                                aria-label={`Edit ${product.name}`}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(product.id)}
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
+                                title="Delete product"
+                                aria-label={`Delete ${product.name}`}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </main>
 
           {/* Slide-over form */}
           {showForm && (
-        <div className="fixed inset-0 z-50 flex">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="flex-1 bg-black/40 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             onClick={() => {
               setShowForm(false);
               setEditingId(null);
             }}
           />
-          <div className="w-full max-w-md bg-[#070A15]/95 border-l border-white/10 shadow-2xl p-6 overflow-y-auto">
+          <div className="relative w-full max-w-3xl bg-[#070A15]/95 border border-white/10 rounded-2xl shadow-2xl p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA]">
@@ -574,6 +698,7 @@ export default function AdminPage() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs font-medium text-[#A8ACB8]" htmlFor="admin-name">
                   Name
@@ -601,7 +726,7 @@ export default function AdminPage() {
                   >
                     {(['laptops', 'wearables', 'audio', 'cameras', 'consoles', 'devices'] as const).map(
                       cat => (
-                        <option key={cat} value={cat}>
+                        <option key={cat} value={cat} className="text-[#111827]">
                           {cat.charAt(0).toUpperCase() + cat.slice(1)}
                         </option>
                       )
@@ -717,6 +842,7 @@ export default function AdminPage() {
                   className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700] resize-none"
                 />
               </div>
+              </div>
 
               <div className="space-y-1">
                 <label className="text-xs font-medium text-[#A8ACB8]" htmlFor="admin-stock">
@@ -730,6 +856,22 @@ export default function AdminPage() {
                   onChange={(e) => handleChange('stockQuantity', e.target.value)}
                   className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
                 />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleChange('stockQuantity', String(Math.max(0, Number(formState.stockQuantity || 0) - 1)))}
+                    className="px-3 py-1 rounded-lg bg-white/5 text-[#F4F6FA] hover:bg-white/10"
+                  >
+                    -
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleChange('stockQuantity', String(Math.max(0, Number(formState.stockQuantity || 0) + 1)))}
+                    className="px-3 py-1 rounded-lg bg-white/5 text-[#F4F6FA] hover:bg-white/10"
+                  >
+                    +
+                  </button>
+                </div>
                 <p className="text-[11px] text-[#6B7280]">Listed as in stock when quantity is greater than zero.</p>
               </div>
 
@@ -866,8 +1008,7 @@ export default function AdminPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setRepairs(loadRepairs());
-                  setRepairResponses(loadRepairResponses());
+                  void loadRepairsFromApi();
                 }}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA] transition-colors"
               >
@@ -882,7 +1023,9 @@ export default function AdminPage() {
                     <ClipboardList className="w-4 h-4 text-[#FFD700]" />
                     Queue
                   </p>
-                  <p className="text-xs text-[#A8ACB8]">{repairs.length} total</p>
+                  <p className="text-xs text-[#A8ACB8]">
+                    {repairsLoading ? 'Loading…' : `${repairs.length} total`}
+                  </p>
                 </div>
                 <div className="max-h-[70vh] overflow-y-auto">
                   {repairs.length === 0 ? (
@@ -909,6 +1052,9 @@ export default function AdminPage() {
                               </p>
                               <p className="text-xs text-[#A8ACB8] truncate">
                                 {r.id} • {r.device}
+                              </p>
+                              <p className="text-[11px] text-[#6B7280]">
+                                {new Date(r.createdAt).toLocaleString('en-PH')}
                               </p>
                             </div>
                             <span
@@ -978,7 +1124,7 @@ export default function AdminPage() {
                               className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
                             >
                               {(['new', 'quoted', 'scheduled', 'in_progress', 'done'] as const).map((s) => (
-                                <option key={s} value={s}>
+                                <option key={s} value={s} className="text-[#111827]">
                                   {s}
                                 </option>
                               ))}
