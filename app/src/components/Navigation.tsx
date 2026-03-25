@@ -4,6 +4,15 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, X, ShoppingCart, Cpu, Search, User, LogOut, Settings } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
+import { useCatalog } from '../context/CatalogContext';
+
+function formatCategoryName(category: string) {
+  return category
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
 
 export default function Navigation() {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -14,6 +23,7 @@ export default function Navigation() {
   const location = useLocation();
   const { totalItems } = useCart();
   const { user, logout } = useAuth();
+  const { products } = useCatalog();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -42,13 +52,16 @@ export default function Navigation() {
     }
   };
 
-  const categories = [
-    { id: 'laptops', name: 'Laptops', path: '/category/laptops' },
-    { id: 'wearables', name: 'Wearables', path: '/category/wearables' },
-    { id: 'audio', name: 'Audio', path: '/category/audio' },
-    { id: 'devices', name: 'Devices', path: '/category/devices' },
-    { id: 'consoles', name: 'Consoles', path: '/category/consoles' },
-  ];
+  const categories = useMemo(() => {
+    const unique = Array.from(new Set(products.map((p) => p.category).filter(Boolean)));
+    return unique
+      .sort((a, b) => a.localeCompare(b))
+      .map((category) => ({
+        id: category,
+        name: formatCategoryName(category),
+        path: `/category/${category}`,
+      }));
+  }, [products]);
   const isAdmin = user?.role === 'ADMIN';
 
   const isOnListingPage = useMemo(

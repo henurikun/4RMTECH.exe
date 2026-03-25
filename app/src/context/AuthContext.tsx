@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
@@ -35,12 +35,14 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const refreshRetryCount = useRef(0);
 
   const refreshUser = useCallback(async () => {
     const fb = auth.currentUser;
     if (!fb) {
       setToken(null);
       setUser(null);
+      refreshRetryCount.current = 0;
       return;
     }
     try {
@@ -48,10 +50,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(idToken);
       const me = await api.auth.me();
       setUser({ id: me.id, email: me.email, name: me.name, role: me.role as UserRole });
+      refreshRetryCount.current = 0;
     } catch {
       setToken(null);
       setUser(null);
-      signOut(auth).catch(() => {});
+      // Avoid forcing a logout during transient API failures (prevents admin from needing to log in every refresh).
+      if (auth.currentUser && refreshRetryCount.current < 2) {
+        refreshRetryCount.current += 1;
+        setTimeout(() => {
+          void refreshUser();
+        }, 1500);
+      }
     }
   }, []);
 

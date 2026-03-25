@@ -7,24 +7,26 @@ import { useCart } from '../context/CartContext';
 import { useCatalog } from '../context/CatalogContext';
 import { getStockQuantity, isPurchasable } from '../lib/productAvailability';
 
-const categoryNames: Record<string, string> = {
-  laptops: 'Laptops',
-  wearables: 'Wearables',
-  audio: 'Audio',
-  cameras: 'Cameras',
-  devices: 'Devices',
-  consoles: 'Consoles',
-};
+const formatCategoryName = (category: string) =>
+  category
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 
 export default function ProductListingPage() {
   const { category } = useParams<{ category: string }>();
   const [searchParams] = useSearchParams();
+  const q = (searchParams.get('q') ?? '').trim().toLowerCase();
   const [products, setProducts] = useState<Product[]>([]);
   const [filter, setFilter] = useState<'all' | 'budget' | 'premium'>('all');
   const [sort, setSort] = useState<'price-low' | 'price-high' | 'featured'>('featured');
   const { addItem, totalItems, items } = useCart();
   const { user } = useAuth();
   const { products: catalogProducts } = useCatalog();
+  const categoryOptions = Array.from(new Set(catalogProducts.map((p) => p.category).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b)
+  );
 
   if (user?.role === 'ADMIN') {
     return (
@@ -49,8 +51,6 @@ export default function ProductListingPage() {
 
   useEffect(() => {
     if (category) {
-      const q = (searchParams.get('q') ?? '').trim().toLowerCase();
-
       let filtered =
         category === 'all'
           ? [...catalogProducts]
@@ -87,7 +87,7 @@ export default function ProductListingPage() {
 
       setProducts(filtered);
     }
-  }, [category, filter, sort, searchParams, catalogProducts]);
+  }, [category, filter, q, sort, catalogProducts]);
 
   const isInCart = (productId: string) => items.some((i) => i.productId === productId);
 
@@ -105,7 +105,7 @@ export default function ProductListingPage() {
               <span className="hidden sm:inline">Back</span>
             </Link>
             <h1 className="font-['Space_Grotesk'] text-xl font-bold text-[#F4F6FA]">
-              {category ? categoryNames[category] || 'Products' : 'Products'}
+              {category ? (category === 'all' ? 'Products' : formatCategoryName(category)) : 'Products'}
             </h1>
           </div>
           
@@ -118,41 +118,74 @@ export default function ProductListingPage() {
 
       {/* Filters */}
       <div className="px-6 lg:px-12 py-6 border-b border-white/5">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-[#A8ACB8]" />
-            <span className="text-sm text-[#A8ACB8]">Filter:</span>
-          </div>
-          
-          <div className="flex gap-2">
-            {(['all', 'budget', 'premium'] as const).map((f) => (
-                <button
-                key={f}
-                onClick={() => setFilter(f)}
+        <div className="mt-4 flex flex-wrap items-start justify-between gap-6">
+          {/* Category chips (left) */}
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm text-[#A8ACB8] whitespace-nowrap">Category:</span>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                to="/category/all"
                 className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                  filter === f
+                  category === 'all'
                     ? 'bg-[#FFD700] text-[#070A15]'
                     : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
                 }`}
               >
-                {f.charAt(0).toUpperCase() + f.slice(1)}
-              </button>
-            ))}
+                All
+              </Link>
+              {categoryOptions.map((cat) => (
+                <Link
+                  key={cat}
+                  to={`/category/${cat}`}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                    category === cat
+                      ? 'bg-[#FFD700] text-[#070A15]'
+                      : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
+                  }`}
+                >
+                  {formatCategoryName(cat)}
+                </Link>
+              ))}
+            </div>
           </div>
 
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-sm text-[#A8ACB8]">Sort:</span>
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as typeof sort)}
-              aria-label="Sort products"
-              title="Sort products"
-              className="px-4 py-2 bg-white/5 border border-white/10 rounded-full text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
-            >
-              <option value="featured">Featured</option>
-              <option value="price-low">Price: Low to High</option>
-              <option value="price-high">Price: High to Low</option>
-            </select>
+          {/* Filter + Sort (right) */}
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-[#A8ACB8]" />
+              <span className="text-sm text-[#A8ACB8]">Filter:</span>
+            </div>
+
+            <div className="flex gap-2">
+              {(['all', 'budget', 'premium'] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                    filter === f
+                      ? 'bg-[#FFD700] text-[#070A15]'
+                      : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
+                  }`}
+                >
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-[#A8ACB8]">Sort:</span>
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as typeof sort)}
+                aria-label="Sort products"
+                title="Sort products"
+                className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
+              >
+                <option value="featured" className="text-[#111827]">Featured</option>
+                <option value="price-low" className="text-[#111827]">Price: Low to High</option>
+                <option value="price-high" className="text-[#111827]">Price: High to Low</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>

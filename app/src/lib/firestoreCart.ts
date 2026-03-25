@@ -82,12 +82,11 @@ export async function addCartItem(
 
   await runTransaction(db, async (transaction) => {
     const cur = await transaction.get(ref);
-    const prevQty = cur.exists() ? Number(cur.data().quantity ?? 0) : 0;
-    const nextQty = prevQty + quantity;
+    if (cur.exists()) return;
     const prevSnap = cur.exists() ? (cur.data().productSnapshot as ProductSnapshot | undefined) : undefined;
     transaction.set(ref, {
       productId,
-      quantity: nextQty,
+      quantity,
       productSnapshot: snapshot ?? prevSnap ?? null,
     });
   });

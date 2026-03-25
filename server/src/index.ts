@@ -67,6 +67,17 @@ function mapProduct(id: string, d: ProductDoc) {
   };
 }
 
+function makeStableProductId(name: string, category: string) {
+  const base = `${category}:${name}`;
+  const normalized = base
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-');
+  return normalized.slice(0, 60) || 'product';
+}
+
 app.get('/api/me', requireAuth, async (req: AuthedRequest, res) => {
   const uid = req.auth!.userId;
   const email = req.auth?.email ?? '';
@@ -210,7 +221,15 @@ app.post('/api/admin/products', requireAuth, requireAdmin, async (req: AuthedReq
   const parsed = productCreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
   const input = parsed.data;
-  const id = input.id ?? db().collection('products').doc().id;
+  const skuId = input.sku != null ? String(input.sku).trim() : '';
+  const id =
+    input.id ??
+    (skuId
+      ? skuId
+      : makeStableProductId(
+          String(input.name ?? ''),
+          String(input.category ?? '')
+        ));
   const stock = input.stockQuantity ?? 0;
   const row: ProductDoc = {
     sku: input.sku ?? null,
@@ -259,6 +278,31 @@ app.patch('/api/admin/products/:id', requireAuth, requireAdmin, async (req: Auth
   }
   await ref.update(updates);
   return res.json(mapProduct(id, { ...cur, ...updates } as ProductDoc));
+});
+
+app.delete('/api/admin/products/clear', requireAuth, requireAdmin, async (_req: AuthedRequest, res) => {
+  try {
+    const col = db().collection('products');
+    const snap = await col.get();
+    const docs = snap.docs;
+    let deleted = 0;
+
+    // Firestore allows up to 500 operations per batch.
+    for (let i = 0; i < docs.length; i += 500) {
+      const batch = db().batch();
+      const slice = docs.slice(i, i + 500);
+      slice.forEach((d) => {
+        batch.delete(d.ref);
+        deleted += 1;
+      });
+      await batch.commit();
+    }
+
+    const remaining = (await col.get()).size;
+    return res.json({ ok: true, deleted, remaining });
+  } catch (e) {
+    return res.status(500).json({ error: e instanceof Error ? e.message : 'Failed to clear inventory' });
+  }
 });
 
 app.delete('/api/admin/products/:id', requireAuth, requireAdmin, async (req: AuthedRequest, res) => {

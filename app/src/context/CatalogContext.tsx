@@ -31,11 +31,12 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     try {
       const rows = await api.products.list();
       const mapped = rows.map((r) => mapApiProductToProduct(r));
-      // Empty DB → fall back to static `allProducts` in this provider.
-      setRemote(mapped.length > 0 ? mapped : null);
+      // If the API returns an empty list, treat it as "no inventory" (do not fall back to demo data).
+      setRemote(mapped);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load catalog');
-      setRemote(null);
+      // Avoid repopulating the UI with demo data if the API fails (e.g., after clearing).
+      setRemote([]);
     } finally {
       setLoading(false);
     }

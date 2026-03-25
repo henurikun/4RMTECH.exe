@@ -98,7 +98,7 @@ export default function CartPage() {
             onClick={clearCart}
             className="text-sm text-[#A8ACB8] hover:text-red-400 transition-colors"
           >
-            Clear cart
+            Clear All
           </button>
         </div>
       </header>

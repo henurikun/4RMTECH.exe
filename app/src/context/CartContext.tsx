@@ -133,32 +133,54 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (user) {
+        const alreadyInCart = items.some((i) => i.productId === productId);
+        if (alreadyInCart) {
+          toast.message('Item is already in your cart.');
+          return;
+        }
+
+        const qtyInCart = items.find((i) => i.productId === productId)?.quantity ?? 0;
+        const maxA = maxAddable(resolved, qtyInCart);
+        if (maxA <= 0) {
+          toast.error('No more stock available for this item.');
+          return;
+        }
+
+        const addQty = Math.min(quantity, maxA);
+        if (addQty < quantity) {
+          toast.message('Quantity limited by available stock.', {
+            description: `Added ${addQty} instead of ${quantity}.`,
+          });
+        }
+
+        // Optimistic UI update: update cart immediately so UI doesn't wait for Firestore snapshot.
+        setItems((prev) => {
+          if (prev.some((i) => i.productId === productId)) return prev;
+          return [...prev, { productId, quantity: addQty, productData: resolved }];
+        });
+
         void (async () => {
           const ok = await ensureFirebaseUidMatchesApiUser(user.id);
-          if (!ok) return;
-          const qtyInCart =
-            items.find((i) => i.productId === productId)?.quantity ?? 0;
-          const maxA = maxAddable(resolved, qtyInCart);
-          if (maxA <= 0) {
-            toast.error('No more stock available for this item.');
+          if (!ok) {
+            setItems((prev) => prev.filter((i) => i.productId !== productId));
             return;
-          }
-          const addQty = Math.min(quantity, maxA);
-          if (addQty < quantity) {
-            toast.message('Quantity limited by available stock.', {
-              description: `Added ${addQty} instead of ${quantity}.`,
-            });
           }
           try {
             await fsAddCartItem(user.id, productId, addQty, resolved);
           } catch {
-            // permission-denied if rules/token mismatch
+            // Roll back optimistic update if Firestore write fails.
+            setItems((prev) => prev.filter((i) => i.productId !== productId));
           }
         })();
         return;
       }
 
       setItems((prev) => {
+        const existing = prev.find((i) => i.productId === productId);
+        if (existing) {
+          toast.message('Item is already in your cart.');
+          return prev;
+        }
         const qtyInCart = prev.find((i) => i.productId === productId)?.quantity ?? 0;
         const maxA = maxAddable(resolved, qtyInCart);
         if (maxA <= 0) {
@@ -171,15 +193,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             description: `Added ${addQty} instead of ${quantity}.`,
           });
         }
-        const existing = prev.find((i) => i.productId === productId);
-        let next: CartItem[];
-        if (existing) {
-          next = prev.map((i) =>
-            i.productId === productId ? { ...i, quantity: i.quantity + addQty } : i
-          );
-        } else {
-          next = [...prev, { productId, quantity: addQty, productData: resolved }];
-        }
+        const next: CartItem[] = [...prev, { productId, quantity: addQty, productData: resolved }];
         saveGuestCart(next);
         return next;
       });

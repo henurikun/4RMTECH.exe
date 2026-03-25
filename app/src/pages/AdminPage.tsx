@@ -6,14 +6,19 @@ import { useAuth } from '../context/AuthContext';
 import { useCatalog } from '../context/CatalogContext';
 import { api, type RepairTicket } from '../lib/api';
 
-type Mode = 'all' | 'laptops' | 'wearables' | 'audio' | 'cameras' | 'consoles' | 'devices';
+type Mode = 'all' | string;
 type Panel = 'products' | 'inbox';
 type InboxTab = 'invoices' | 'repairs';
 
 type RepairStatus = 'new' | 'quoted' | 'scheduled' | 'in_progress' | 'done';
 type CsvProductRow = {
   itemName: string;
-  category: Mode;
+  /**
+   * Optional unique identifier from CSV (e.g. `id`, `itemId`, `productId`, `sku`).
+   * Used to make re-imports overwrite instead of creating duplicates.
+   */
+  itemId?: string;
+  category: string;
   price: number;
   specialPrice: number | null;
   stockQuantity: number;
@@ -49,7 +54,7 @@ function mapTicketToRepairRequest(t: RepairTicket): RepairRequest {
 interface FormState {
   id: string;
   name: string;
-  category: Mode;
+  category: string;
   price: string;
   originalPrice: string;
   image: string;
@@ -155,13 +160,38 @@ function toMode(input: string): Mode {
   if (s.includes('camera')) return 'cameras';
   if (s.includes('console') || s.includes('game')) return 'consoles';
   if (s.includes('device') || s.includes('phone') || s.includes('tablet')) return 'devices';
-  return 'devices';
+  if (!s) return 'devices';
+  const normalized = s
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, '-');
+  return normalized || 'devices';
+}
+
+function formatCategoryName(category: string) {
+  return category
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 function parseMoney(input: string): number {
   const cleaned = input.replace(/[^\d.-]/g, '');
   const n = Number(cleaned);
   return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
+function makeStableProductId(itemName: string, category: string) {
+  const base = `${category}:${itemName}`;
+  const normalized = base
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-');
+  return normalized.slice(0, 60) || 'product';
 }
 
 function parseCsvProducts(text: string): CsvProductRow[] {
@@ -176,6 +206,9 @@ function parseCsvProducts(text: string): CsvProductRow[] {
   const idxPrice = header.findIndex((h) => ['price', 'srp', 'regularprice'].includes(h));
   const idxSpecial = header.findIndex((h) => ['specialprice', 'saleprice', 'promo', 'promoprice'].includes(h));
   const idxStock = header.findIndex((h) => ['stock', 'stockquantity', 'qty', 'quantity'].includes(h));
+  const idxItemId = header.findIndex((h) =>
+    ['id', 'itemid', 'item_id', 'productid', 'product_id', 'sku'].includes(h)
+  );
   if (idxName < 0 || idxPrice < 0) return [];
 
   const rows: CsvProductRow[] = [];
@@ -183,11 +216,14 @@ function parseCsvProducts(text: string): CsvProductRow[] {
     const cols = parseCsvLine(lines[i]);
     const itemName = (cols[idxName] ?? '').trim();
     if (!itemName) continue;
+    const rawItemId = idxItemId >= 0 ? String(cols[idxItemId] ?? '').trim() : '';
+    const itemId = rawItemId || undefined;
     const price = parseMoney(cols[idxPrice] ?? '');
     const specialRaw = idxSpecial >= 0 ? parseMoney(cols[idxSpecial] ?? '') : 0;
     const stockRaw = idxStock >= 0 ? Math.floor(Number(cols[idxStock] ?? '0')) : 10;
     rows.push({
       itemName,
+      itemId,
       category: toMode(idxCategory >= 0 ? cols[idxCategory] ?? '' : ''),
       price,
       specialPrice: specialRaw > 0 ? specialRaw : null,
@@ -212,6 +248,7 @@ export default function AdminPage() {
   const [inventorySearch, setInventorySearch] = useState('');
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [clearingInventory, setClearingInventory] = useState(false);
   const [uploadingCsv, setUploadingCsv] = useState(false);
   const [uploadSummary, setUploadSummary] = useState('');
 
@@ -222,6 +259,11 @@ export default function AdminPage() {
   const [replyStatus, setReplyStatus] = useState<RepairStatus>('new');
   const [replyMessage, setReplyMessage] = useState('');
   const [replySaved, setReplySaved] = useState('');
+  const categoryOptions = useMemo(() => {
+    const defaults = ['laptops', 'wearables', 'audio', 'cameras', 'consoles', 'devices'];
+    const dynamic = products.map((p) => p.category).filter(Boolean);
+    return Array.from(new Set([...defaults, ...dynamic])).sort((a, b) => a.localeCompare(b));
+  }, [products]);
 
   const loadRepairsFromApi = async () => {
     setRepairsLoading(true);
@@ -389,9 +431,11 @@ export default function AdminPage() {
       if (editingId) {
         await api.admin.updateProduct(editingId, payload);
       } else {
+        const stableId = formState.id.trim() ? formState.id.trim() : makeStableProductId(product.name, product.category);
         await api.admin.createProduct({
           ...payload,
-          ...(formState.id.trim() ? { id: formState.id.trim() } : {}),
+          id: stableId,
+          sku: stableId,
         });
       }
       await refetch();
@@ -417,7 +461,10 @@ export default function AdminPage() {
       let failed = 0;
       for (const row of rows) {
         try {
+          const stableId = row.itemId ? row.itemId.trim() : makeStableProductId(row.itemName, row.category);
           await api.admin.createProduct({
+            id: stableId,
+            sku: stableId,
             name: row.itemName,
             category: row.category,
             price: row.price,
@@ -544,6 +591,37 @@ export default function AdminPage() {
                 Add Product
               </button>
             )}
+
+            {panel === 'products' && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const confirmed = window.confirm('Clear ALL inventory products stored in the database?');
+                  if (!confirmed) return;
+                  setClearingInventory(true);
+                  setSaveError('');
+                  try {
+                    const beforeCount = (await api.products.list()).length;
+                    const result = await api.admin.clearProducts();
+                    await refetch();
+                    const afterCount = (await api.products.list()).length;
+                    const deletedCount =
+                      typeof (result as any)?.deleted === 'number' ? (result as any).deleted : Math.max(0, beforeCount - afterCount);
+                    const remaining =
+                      typeof (result as any)?.remaining === 'number' ? (result as any).remaining : afterCount;
+                    setUploadSummary(`Cleared inventory: deleted ${deletedCount} product(s). Remaining: ${remaining}.`);
+                  } catch (e) {
+                    setSaveError(e instanceof Error ? e.message : 'Failed to clear inventory');
+                  } finally {
+                    setClearingInventory(false);
+                  }
+                }}
+                disabled={clearingInventory}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-red-500/10 text-red-300 text-sm font-semibold hover:bg-red-500/20 disabled:opacity-60 transition-colors"
+              >
+                Clear Inventory
+              </button>
+            )}
           </div>
         </div>
         {saveError && (
@@ -564,7 +642,7 @@ export default function AdminPage() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {(['all', 'laptops', 'wearables', 'audio', 'cameras', 'consoles', 'devices'] as const).map(
+                {(['all', ...categoryOptions] as const).map(
                   cat => (
                     <button
                       key={cat}
@@ -575,7 +653,7 @@ export default function AdminPage() {
                           : 'bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA]'
                       }`}
                     >
-                      {cat === 'all' ? 'All' : cat.charAt(0).toUpperCase() + cat.slice(1)}
+                      {cat === 'all' ? 'All' : formatCategoryName(cat)}
                     </button>
                   )
                 )}
@@ -724,10 +802,10 @@ export default function AdminPage() {
                     onChange={e => handleChange('category', e.target.value)}
                     className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] focus:outline-none focus:border-[#FFD700]"
                   >
-                    {(['laptops', 'wearables', 'audio', 'cameras', 'consoles', 'devices'] as const).map(
+                    {categoryOptions.map(
                       cat => (
                         <option key={cat} value={cat} className="text-[#111827]">
-                          {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                          {formatCategoryName(cat)}
                         </option>
                       )
                     )}

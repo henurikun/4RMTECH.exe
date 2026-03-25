@@ -149,6 +149,7 @@ export const api = {
         body: JSON.stringify(input),
       }),
     deleteProduct: (id: string) => request<{ ok: true }>(`/api/admin/products/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    clearProducts: () => request<{ ok: true; deleted: number }>('/api/admin/products/clear', { method: 'DELETE' }),
     firestoreOrders: () => request<Record<string, unknown>[]>('/api/admin/firestore-orders'),
     repairs: () => request<RepairTicket[]>('/api/admin/repairs'),
     updateRepair: (id: string, input: { status: RepairStatus; message?: string }) =>
