@@ -1,0 +1,40 @@
+Problem: Quota exceeded from zero server optimization
+
+Solution: Server Optimization so we don't hit quota
+
+Server Flow:
+
+Firestore -> Nodejs -> Frontend
+
+1. Firestore fetches all items onces
+2. Nodejs makes a cache database
+3. Frontend uses cache database
+
+2. Write-Through Cache
+    1. The "Opening" (Server Starts)
+        The server wakes up and needs to know what it’s selling.
+        The Action: It reads the "Main Warehouse Computer" (Firestore) once.
+        The Result: It "fetches" 2,300 items into its own local memory (RAM).
+        Cost: 2,300 reads (One-time fee).
+
+    2. The "Customers" (Browsing)
+        Users visit the website to look at laptops and PC parts.
+        The Action: They look at the "Printed Catalog" (Node.js RAM).
+        The Result: The server sends the data instantly.
+        Cost: 0 reads. (Even if 1,000,000 people look, it stays 0).
+
+    3. The "Sale" (Transaction)
+        A user buys one product.
+        The Action: 1.  The server sends a note to the Warehouse (Firestore) to subtract 1 from that specific product.
+                    2.  The server takes a pen and crosses out the old stock number on its "Printed Catalog" (RAM) and writes the new number.
+        The Result: The website now shows the new stock to everyone immediately.
+        Cost: 1 Write (0 Reads).
+
+    4. The "Reset" (Daily Sync)
+        At 4:00 PM (1:00 AM PT), the server refreshes.
+        The Action: It throws away the old "Printed Catalog" and prints a fresh one from the Warehouse.
+        The Result: Any manual changes you made (price updates, new items) are now live.
+        Cost: 2,300 reads (Happens only once per day).
+
+
+checkout function code should update both the RAM and Firestore at the same time

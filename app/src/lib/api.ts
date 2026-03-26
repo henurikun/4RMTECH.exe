@@ -2,6 +2,8 @@ import type { ApiProductRow } from './productMap';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 
+let inMemoryToken: string | null = null;
+
 export class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -11,6 +13,7 @@ export class ApiError extends Error {
 }
 
 function getToken() {
+  if (inMemoryToken) return inMemoryToken;
   try {
     return window.localStorage.getItem('4rmtech_api_token');
   } catch {
@@ -19,6 +22,7 @@ function getToken() {
 }
 
 export function setToken(token: string | null) {
+  inMemoryToken = token;
   try {
     if (!token) window.localStorage.removeItem('4rmtech_api_token');
     else window.localStorage.setItem('4rmtech_api_token', token);
@@ -74,6 +78,14 @@ export type OrderNotifyPayload = {
   customer: { name: string; email: string; phone: string; address: string };
   totalPhp: number;
   items: { name: string; quantity: number; unitPrice: number }[];
+  /** Optional: present when customer submits an online bank transfer receipt for verification. */
+  receiptUrl?: string | null;
+  /** Optional: bank transfer details shown to the store/admin for verification. */
+  bankTransfer?: {
+    accountName?: string;
+    accountNumber?: string;
+    transactionReference?: string;
+  };
 };
 
 export type RepairStatus = 'new' | 'quoted' | 'scheduled' | 'in_progress' | 'done';

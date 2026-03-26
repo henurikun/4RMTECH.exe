@@ -99,7 +99,8 @@ export async function createPaymentFirebase(
   orderId: string,
   paymentFlow: PaymentFlow,
   uid: string,
-  onlineChannel?: string
+  onlineChannel?: string,
+  receiptUrl?: string | null
 ) {
   const sessionOk = await ensureFirebaseUidMatchesApiUser(uid);
   if (!sessionOk) {
@@ -109,12 +110,16 @@ export async function createPaymentFirebase(
   }
 
   const ref = doc(db, FIRESTORE_ORDERS, orderId);
+  const isOnline = paymentFlow === 'online';
   await updateDoc(ref, {
     paymentFlow,
     onlineChannel: paymentFlow === 'online' ? (onlineChannel ?? null) : null,
     paymentMethod: paymentFlow === 'cod' ? 'COD' : 'ONLINE',
-    paymentStatus: 'PENDING',
-    status: 'PENDING',
+    paymentReceiptUrl: isOnline ? (receiptUrl ?? null) : null,
+    // Online payments require manual verification (QR/bank transfer).
+    paymentStatus: isOnline ? 'PENDING' : 'PENDING',
+    paymentConfirmedAt: null,
+    status: isOnline ? 'VERIFICATION_PENDING' : 'PENDING',
     updatedAt: serverTimestamp(),
   });
 }

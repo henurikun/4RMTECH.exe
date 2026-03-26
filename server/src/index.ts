@@ -34,6 +34,47 @@ type ProductDoc = {
   updatedAt?: string;
 };
 
+type ProductRow = ReturnType<typeof mapProduct>;
+
+type ProductCache = {
+  byId: Map<string, ProductDoc>;
+  rowById: Map<string, ProductRow>;
+  rowsSorted: ProductRow[];
+  loadedAt: string;
+};
+
+class AsyncMutex {
+  private locked = false;
+  private queue: Array<() => void> = [];
+
+  async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const unlock = await this.acquire();
+    try {
+      return await fn();
+    } finally {
+      unlock();
+    }
+  }
+
+  private acquire(): Promise<() => void> {
+    return new Promise((resolve) => {
+      const tryAcquire = () => {
+        this.locked = true;
+        resolve(() => this.release());
+      };
+
+      if (!this.locked) tryAcquire();
+      else this.queue.push(tryAcquire);
+    });
+  }
+
+  private release() {
+    const next = this.queue.shift();
+    if (next) next();
+    else this.locked = false;
+  }
+}
+
 function db() {
   return getFirebaseAdmin().firestore();
 }
@@ -65,6 +106,124 @@ function mapProduct(id: string, d: ProductDoc) {
     badge: d.badge ?? null,
     specs: d.specs ?? {},
   };
+}
+
+let productCache: ProductCache | null = null;
+const productCacheMutex = new AsyncMutex();
+
+async function loadProductCatalogFromFirestore() {
+  const snap = await db().collection('products').get();
+  const byId = new Map<string, ProductDoc>();
+  const rowById = new Map<string, ProductRow>();
+  const rowsSorted: ProductRow[] = [];
+
+  snap.docs.forEach((docSnap) => {
+    const id = docSnap.id;
+    const d = docSnap.data() as ProductDoc;
+    byId.set(id, d);
+    const row = mapProduct(id, d);
+    rowById.set(id, row);
+    rowsSorted.push(row);
+  });
+
+  rowsSorted.sort((a, b) => a.name.localeCompare(b.name));
+
+  productCache = {
+    byId,
+    rowById,
+    rowsSorted,
+    loadedAt: new Date().toISOString(),
+  };
+}
+
+async function ensureProductCacheLoaded() {
+  if (productCache) return;
+  await productCacheMutex.runExclusive(async () => {
+    if (productCache) return;
+    await loadProductCatalogFromFirestore();
+  });
+}
+
+function upsertProductInCache(productId: string, doc: ProductDoc) {
+  if (!productCache) return;
+
+  const existingDoc = productCache.byId.get(productId);
+  if (existingDoc) Object.assign(existingDoc, doc);
+  else productCache.byId.set(productId, doc);
+
+  const nextRow = mapProduct(productId, doc);
+  const existingRow = productCache.rowById.get(productId);
+  if (existingRow) Object.assign(existingRow, nextRow);
+  else {
+    productCache.rowById.set(productId, nextRow);
+    productCache.rowsSorted.push(nextRow);
+  }
+
+  // If name/category changed, resort so `/api/products` stays sorted.
+  productCache.rowsSorted.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function removeProductFromCache(productId: string) {
+  if (!productCache) return;
+
+  productCache.byId.delete(productId);
+  const row = productCache.rowById.get(productId);
+  productCache.rowById.delete(productId);
+  if (!row) return;
+
+  const idx = productCache.rowsSorted.indexOf(row);
+  if (idx >= 0) productCache.rowsSorted.splice(idx, 1);
+}
+
+function getTimeZoneParts(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  const get = (type: string) => parts.find((p) => p.type === type)?.value;
+  return {
+    year: Number(get('year') ?? 0),
+    month: Number(get('month') ?? 1),
+    day: Number(get('day') ?? 1),
+    hour: Number(get('hour') ?? 0),
+    minute: Number(get('minute') ?? 0),
+  };
+}
+
+function startDailyProductCacheRefreshPT() {
+  const ptZone = 'America/Los_Angeles';
+  const now = new Date();
+  const nowParts = getTimeZoneParts(now, ptZone);
+  let lastReloadPTDateKey = `${nowParts.year}-${nowParts.month}-${nowParts.day}`;
+
+  // If we already passed today's 1:00 AM PT, prevent reloading again today.
+  const passedTodayReset = nowParts.hour > 1 || (nowParts.hour === 1 && nowParts.minute >= 0);
+  if (!passedTodayReset) lastReloadPTDateKey = '';
+
+  setInterval(() => {
+    const current = new Date();
+    const parts = getTimeZoneParts(current, ptZone);
+    if (parts.hour !== 1 || parts.minute !== 0) return;
+
+    const key = `${parts.year}-${parts.month}-${parts.day}`;
+    if (key === lastReloadPTDateKey) return;
+    lastReloadPTDateKey = key;
+
+    void productCacheMutex
+      .runExclusive(async () => {
+        await loadProductCatalogFromFirestore();
+      })
+      .catch((e) => {
+        // eslint-disable-next-line no-console
+        console.error('Daily product cache refresh failed:', e);
+      });
+  }, 20_000);
 }
 
 function makeStableProductId(name: string, category: string) {
@@ -138,17 +297,18 @@ app.post('/api/auth/reset-password', async (_req, res) =>
 );
 
 app.get('/api/products', async (_req, res) => {
-  const snap = await db().collection('products').get();
-  const rows = snap.docs.map((doc) => mapProduct(doc.id, doc.data() as ProductDoc));
-  rows.sort((a, b) => a.name.localeCompare(b.name));
-  return res.json(rows);
+  await ensureProductCacheLoaded();
+  if (!productCache) return res.status(503).json({ error: 'Product cache not ready' });
+  return res.json(productCache.rowsSorted);
 });
 
 app.get('/api/products/:id', async (req, res) => {
-  const ref = db().collection('products').doc(String(req.params.id));
-  const s = await ref.get();
-  if (!s.exists) return res.status(404).json({ error: 'Not found' });
-  return res.json(mapProduct(s.id, s.data() as ProductDoc));
+  await ensureProductCacheLoaded();
+  if (!productCache) return res.status(503).json({ error: 'Product cache not ready' });
+  const id = String(req.params.id);
+  const row = productCache.rowById.get(id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  return res.json(row);
 });
 
 app.post('/api/inventory/apply-order', requireAuth, async (req: AuthedRequest, res) => {
@@ -158,18 +318,62 @@ app.post('/api/inventory/apply-order', requireAuth, async (req: AuthedRequest, r
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
   try {
-    await db().runTransaction(async (tx) => {
+    await productCacheMutex.runExclusive(async () => {
+      await ensureProductCacheLoaded();
+      if (!productCache) throw new Error('Product cache not ready');
+
+      const qtyById = new Map<string, number>();
       for (const line of parsed.data.items) {
-        const ref = db().collection('products').doc(line.productId);
-        const s = await tx.get(ref);
-        if (!s.exists) continue;
-        const d = s.data() as ProductDoc;
-        const cur = Number(d.stockQuantity ?? 0);
-        if (cur < line.quantity) {
-          throw new Error(`Insufficient stock for "${d.name}". Available: ${cur}.`);
+        qtyById.set(line.productId, (qtyById.get(line.productId) ?? 0) + line.quantity);
+      }
+
+      const updatedAt = new Date().toISOString();
+      const nextById = new Map<string, number>();
+
+      for (const [productId, qty] of qtyById.entries()) {
+        const row = productCache.rowById.get(productId);
+        if (!row) continue; // Product missing: match previous behavior
+
+        const cur = Number(row.stockQuantity ?? 0);
+        if (cur < qty) {
+          throw new Error(`Insufficient stock for "${row.name}". Available: ${cur}.`);
         }
-        const next = cur - line.quantity;
-        tx.update(ref, { stockQuantity: next, inStock: next > 0, updatedAt: new Date().toISOString() });
+
+        const next = cur - qty;
+        nextById.set(productId, next);
+      }
+
+      if (nextById.size > 0) {
+        const updates = [...nextById.entries()];
+
+        for (let i = 0; i < updates.length; i += 500) {
+          const batch = db().batch();
+          const slice = updates.slice(i, i + 500);
+          for (const [productId, next] of slice) {
+            batch.update(db().collection('products').doc(productId), {
+              stockQuantity: next,
+              inStock: next > 0,
+              updatedAt,
+            });
+          }
+          await batch.commit();
+        }
+
+        // Keep RAM cache coherent with Firestore writes.
+        for (const [productId, next] of nextById.entries()) {
+          const doc = productCache.byId.get(productId);
+          if (doc) {
+            doc.stockQuantity = next;
+            doc.inStock = next > 0;
+            doc.updatedAt = updatedAt;
+          }
+
+          const row = productCache.rowById.get(productId);
+          if (row) {
+            row.stockQuantity = next;
+            row.inStock = next > 0;
+          }
+        }
       }
     });
     return res.json({ ok: true });
@@ -185,14 +389,56 @@ app.post('/api/inventory/rollback-order', requireAuth, async (req: AuthedRequest
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
   try {
-    await db().runTransaction(async (tx) => {
+    await productCacheMutex.runExclusive(async () => {
+      await ensureProductCacheLoaded();
+      if (!productCache) throw new Error('Product cache not ready');
+
+      const qtyById = new Map<string, number>();
       for (const line of parsed.data.items) {
-        const ref = db().collection('products').doc(line.productId);
-        const s = await tx.get(ref);
-        if (!s.exists) continue;
-        const d = s.data() as ProductDoc;
-        const next = Number(d.stockQuantity ?? 0) + line.quantity;
-        tx.update(ref, { stockQuantity: next, inStock: next > 0, updatedAt: new Date().toISOString() });
+        qtyById.set(line.productId, (qtyById.get(line.productId) ?? 0) + line.quantity);
+      }
+
+      const updatedAt = new Date().toISOString();
+      const nextById = new Map<string, number>();
+
+      for (const [productId, qty] of qtyById.entries()) {
+        const row = productCache.rowById.get(productId);
+        if (!row) continue; // Product missing: match previous behavior
+
+        const cur = Number(row.stockQuantity ?? 0);
+        const next = cur + qty;
+        nextById.set(productId, next);
+      }
+
+      if (nextById.size > 0) {
+        const updates = [...nextById.entries()];
+        for (let i = 0; i < updates.length; i += 500) {
+          const batch = db().batch();
+          const slice = updates.slice(i, i + 500);
+          for (const [productId, next] of slice) {
+            batch.update(db().collection('products').doc(productId), {
+              stockQuantity: next,
+              inStock: next > 0,
+              updatedAt,
+            });
+          }
+          await batch.commit();
+        }
+
+        for (const [productId, next] of nextById.entries()) {
+          const doc = productCache.byId.get(productId);
+          if (doc) {
+            doc.stockQuantity = next;
+            doc.inStock = next > 0;
+            doc.updatedAt = updatedAt;
+          }
+
+          const row = productCache.rowById.get(productId);
+          if (row) {
+            row.stockQuantity = next;
+            row.inStock = next > 0;
+          }
+        }
       }
     });
     return res.json({ ok: true });
@@ -248,7 +494,11 @@ app.post('/api/admin/products', requireAuth, requireAdmin, async (req: AuthedReq
     updatedAt: new Date().toISOString(),
   };
   await db().collection('products').doc(id).set(row);
-  return res.json(mapProduct(id, row));
+  const nextRow = mapProduct(id, row);
+  await productCacheMutex.runExclusive(async () => {
+    upsertProductInCache(id, row);
+  });
+  return res.json(nextRow);
 });
 
 app.patch('/api/admin/products/:id', requireAuth, requireAdmin, async (req: AuthedRequest, res) => {
@@ -277,7 +527,12 @@ app.patch('/api/admin/products/:id', requireAuth, requireAdmin, async (req: Auth
     updates.inStock = d.stockQuantity > 0;
   }
   await ref.update(updates);
-  return res.json(mapProduct(id, { ...cur, ...updates } as ProductDoc));
+  const updatedDoc = { ...cur, ...updates } as ProductDoc;
+  const nextRow = mapProduct(id, updatedDoc);
+  await productCacheMutex.runExclusive(async () => {
+    upsertProductInCache(id, updatedDoc);
+  });
+  return res.json(nextRow);
 });
 
 app.delete('/api/admin/products/clear', requireAuth, requireAdmin, async (_req: AuthedRequest, res) => {
@@ -298,6 +553,10 @@ app.delete('/api/admin/products/clear', requireAuth, requireAdmin, async (_req: 
       await batch.commit();
     }
 
+    await productCacheMutex.runExclusive(async () => {
+      productCache = null;
+    });
+
     const remaining = (await col.get()).size;
     return res.json({ ok: true, deleted, remaining });
   } catch (e) {
@@ -306,7 +565,11 @@ app.delete('/api/admin/products/clear', requireAuth, requireAdmin, async (_req: 
 });
 
 app.delete('/api/admin/products/:id', requireAuth, requireAdmin, async (req: AuthedRequest, res) => {
-  await db().collection('products').doc(String(req.params.id)).delete();
+  const id = String(req.params.id);
+  await db().collection('products').doc(id).delete();
+  await productCacheMutex.runExclusive(async () => {
+    removeProductFromCache(id);
+  });
   return res.json({ ok: true });
 });
 
@@ -376,6 +639,14 @@ app.post('/api/orders/notify-email', requireAuth, async (req: AuthedRequest, res
     orderNumber: z.string(),
     paymentFlow: z.enum(['cod', 'online']),
     onlineChannel: z.string().optional(),
+    receiptUrl: z.string().url().optional().nullable(),
+    bankTransfer: z
+      .object({
+        accountName: z.string().optional(),
+        accountNumber: z.string().optional(),
+        transactionReference: z.string().optional(),
+      })
+      .optional(),
     customer: z.object({
       name: z.string(),
       email: z.string(),
@@ -408,9 +679,25 @@ app.post('/api/orders/notify-email', requireAuth, async (req: AuthedRequest, res
     `  ${d.customer.address}`,
     '',
     `Account user: ${req.auth?.userId}`,
+    ...(d.paymentFlow === 'online'
+      ? [
+          '',
+          'Online payment verification details:',
+          d.bankTransfer
+            ? `  - Bank transfer account: ${d.bankTransfer.accountName ?? ''} ${d.bankTransfer.accountNumber ?? ''}`.trim()
+            : '  - QR payment verification: no receipt uploaded',
+          ...(d.bankTransfer ? [`  - Transaction reference: ${d.bankTransfer?.transactionReference ?? '(not provided)'}`] : []),
+          `  - Receipt URL: ${d.receiptUrl ?? '(not provided)'}`,
+          '  - Please verify and approve manually (customer will wait 1-2 hours).',
+        ]
+      : []),
   ].join('\n');
   try {
-    await sendOrderNotifyEmail({ subject: `[4RMTECH] Order ${d.orderNumber} — ${payLine}`, text });
+    await sendOrderNotifyEmail({
+      subject: `[4RMTECH] Order ${d.orderNumber} — ${payLine}`,
+      text,
+      receiptUrl: d.receiptUrl ?? undefined,
+    });
     return res.json({ ok: true });
   } catch (e) {
     // eslint-disable-next-line no-console
@@ -465,7 +752,25 @@ app.patch('/api/admin/repairs/:id', requireAuth, requireAdmin, async (req: Authe
 });
 
 const port = Number(process.env.PORT ?? 4000);
-app.listen(port, () => {
+async function startServer() {
+  // Warm the in-memory product cache once so browsing doesn't hit Firestore.
+  await productCacheMutex.runExclusive(async () => {
+    if (!productCache) await loadProductCatalogFromFirestore();
+  });
+
+  startDailyProductCacheRefreshPT();
+
   // eslint-disable-next-line no-console
   console.log(`API listening on http://localhost:${port}`);
+  app.listen(port, () => {});
+}
+
+void startServer().catch((e) => {
+  // eslint-disable-next-line no-console
+  console.error('Failed to start server:', e);
+  // Even if the cache warmup fails, still start the server; endpoints will load on-demand.
+  app.listen(port, () => {
+    // eslint-disable-next-line no-console
+    console.log(`API listening on http://localhost:${port}`);
+  });
 });

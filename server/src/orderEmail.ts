@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 
-export async function sendOrderNotifyEmail(params: { subject: string; text: string }): Promise<void> {
+export async function sendOrderNotifyEmail(params: { subject: string; text: string; receiptUrl?: string }) {
   const toRaw = process.env.NOTIFY_TO_EMAILS ?? '';
   const recipients = toRaw
     .split(',')
@@ -32,10 +32,38 @@ export async function sendOrderNotifyEmail(params: { subject: string; text: stri
         : undefined,
   });
 
+  let attachments:
+    | Array<{
+        filename: string;
+        content: Buffer;
+        contentType?: string;
+      }>
+    | undefined;
+
+  if (params.receiptUrl) {
+    try {
+      // Download receipt and attach so the store can verify without opening the link.
+      const r = await fetch(params.receiptUrl);
+      const contentType = r.headers.get('content-type') ?? undefined;
+      const arr = await r.arrayBuffer();
+      attachments = [
+        {
+          filename: 'payment-receipt',
+          content: Buffer.from(arr),
+          contentType,
+        },
+      ];
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[orderEmail] Failed to attach receipt:', e);
+    }
+  }
+
   await transport.sendMail({
     from: process.env.SMTP_FROM ?? process.env.SMTP_USER ?? 'noreply@localhost',
     to: recipients.join(', '),
     subject: params.subject,
     text: params.text,
+    ...(attachments ? { attachments } : {}),
   });
 }

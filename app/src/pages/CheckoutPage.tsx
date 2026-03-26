@@ -5,16 +5,20 @@ import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { placeOrderFirebase, createPaymentFirebase } from '../lib/firestoreCheckout';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 type OnlineChannelId = 'GCASH' | 'MAYA' | 'GOTYME' | 'METROBANK' | 'BDO';
 
-const ONLINE_CHANNELS: { id: OnlineChannelId; label: string }[] = [
-  { id: 'GCASH', label: 'GCash' },
-  { id: 'MAYA', label: 'Maya' },
-  { id: 'GOTYME', label: 'GoTyme' },
-  { id: 'METROBANK', label: 'MetroBank' },
-  { id: 'BDO', label: 'BDO' },
+const ONLINE_CHANNELS: { id: OnlineChannelId; label: string; qr: string }[] = [
+  { id: 'GCASH', label: 'GCash', qr: '/images/gcash-qr.png' },
+  { id: 'MAYA', label: 'Maya', qr: '/images/maya-qr.png' },
+  { id: 'GOTYME', label: 'GoTyme', qr: '/images/gotyme-qr.png' },
+  { id: 'METROBANK', label: 'MetroBank', qr: '' },
+  { id: 'BDO', label: 'BDO', qr: '' },
 ];
+
+const ONLINE_QR_CHANNELS: OnlineChannelId[] = ['GCASH', 'GOTYME', 'MAYA'];
+const ONLINE_BANK_CHANNELS: OnlineChannelId[] = ['METROBANK', 'BDO'];
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-PH', {
@@ -52,6 +56,16 @@ export default function CheckoutPage() {
   const [placing, setPlacing] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [emailWarning, setEmailWarning] = useState('');
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
+  const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const [bankTransfer, setBankTransfer] = useState({
+    accountName: '4RMTECH',
+    accountNumber: '',
+    transactionReference: '',
+  });
+  const [donePaymentFlow, setDonePaymentFlow] = useState<'cod' | 'online' | null>(null);
 
   const shipping = useMemo(() => (subtotal > 0 ? 99 : 0), [subtotal]);
   const total = useMemo(() => subtotal + shipping, [subtotal, shipping]);
@@ -78,6 +92,10 @@ export default function CheckoutPage() {
 
   const summaryShipping = useMemo(() => (summarySubtotal > 0 ? 99 : 0), [summarySubtotal]);
   const summaryGrand = useMemo(() => summarySubtotal + summaryShipping, [summarySubtotal, summaryShipping]);
+
+  const selectedChannel = ONLINE_CHANNELS.find((c) => c.id === onlineChannel);
+  const isQrChannel = Boolean(onlineChannel && ONLINE_QR_CHANNELS.includes(onlineChannel));
+  const isBankChannel = Boolean(onlineChannel && ONLINE_BANK_CHANNELS.includes(onlineChannel));
 
   if (!user) {
     return (
@@ -228,6 +246,11 @@ export default function CheckoutPage() {
       clearCart();
       setPaymentChoice(null);
       setOnlineChannel(null);
+      setReceiptFile(null);
+      setReceiptPreviewUrl(null);
+      setReceiptUrl(null);
+      setUploadingReceipt(false);
+      setBankTransfer({ accountName: '4RMTECH', accountNumber: '', transactionReference: '' });
       setStep('payment');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e) {
@@ -244,15 +267,65 @@ export default function CheckoutPage() {
     }
   };
 
-  const finalizePayment = async () => {
-    if (!placedOrderId || !orderNumber || !user) return;
-    if (paymentChoice === 'online' && !onlineChannel) {
-      setError('Select a payment channel.');
+  const uploadReceipt = async () => {
+    if (!placedOrderId || !user) return;
+    if (!receiptFile) {
+      setError('Select a receipt file first.');
       return;
     }
+    if (uploadingReceipt) return;
+
+    setError('');
+    setUploadingReceipt(true);
+    try {
+      const storage = getStorage();
+      const safeName = receiptFile.name.replace(/[^\w.-]+/g, '_');
+      const path = `payment-receipts/${user.id}/${placedOrderId}/${Date.now()}-${safeName}`;
+      const r = storageRef(storage, path);
+      await uploadBytes(r, receiptFile);
+      const url = await getDownloadURL(r);
+      setReceiptUrl(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to upload receipt.');
+    } finally {
+      setUploadingReceipt(false);
+    }
+  };
+
+  const downloadQrCode = () => {
+    if (!selectedChannel?.qr) return;
+    const href = selectedChannel.qr;
+    const fileBase = selectedChannel.label.replace(/\s+/g, '-').toLowerCase();
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = `${fileBase}-qr.png`;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  const finalizePayment = async () => {
+    if (!placedOrderId || !orderNumber || !user) return;
     if (!paymentChoice) {
       setError('Choose cash on delivery or online payment.');
       return;
+    }
+    if (paymentChoice === 'online') {
+      if (!onlineChannel) {
+        setError('Select a payment channel.');
+        return;
+      }
+      if (isBankChannel) {
+        if (!receiptUrl) {
+          setError('Upload your bank transfer receipt for verification.');
+          return;
+        }
+        if (!bankTransfer.accountNumber.trim() || !bankTransfer.transactionReference.trim()) {
+          setError('Enter your bank transfer account number and transaction reference.');
+          return;
+        }
+      }
     }
 
     setError('');
@@ -263,7 +336,8 @@ export default function CheckoutPage() {
         placedOrderId,
         paymentChoice === 'cod' ? 'cod' : 'online',
         user.id,
-        paymentChoice === 'online' ? onlineChannel ?? undefined : undefined
+        paymentChoice === 'online' ? onlineChannel ?? undefined : undefined,
+        paymentChoice === 'online' && isBankChannel ? receiptUrl : undefined
       );
       try {
         await api.orders.notifyEmail({
@@ -271,6 +345,8 @@ export default function CheckoutPage() {
           orderNumber,
           paymentFlow: paymentChoice === 'cod' ? 'cod' : 'online',
           onlineChannel: paymentChoice === 'online' ? onlineChannel ?? undefined : undefined,
+          receiptUrl: paymentChoice === 'online' && isBankChannel ? receiptUrl : undefined,
+          bankTransfer: paymentChoice === 'online' && isBankChannel ? bankTransfer : undefined,
           customer: {
             name: form.name.trim(),
             email: form.email.trim(),
@@ -285,12 +361,17 @@ export default function CheckoutPage() {
           })),
         });
       } catch {
-        setEmailWarning('Order confirmed, but email notification could not be sent. Please check SMTP settings.');
+        setEmailWarning(
+          paymentChoice === 'online'
+            ? 'Payment request submitted, but email notification could not be sent. Please check SMTP settings.'
+            : 'Order confirmed, but email notification could not be sent. Please check SMTP settings.'
+        );
       }
       setSuccessOrderId(orderNumber);
+      setDonePaymentFlow(paymentChoice);
       setStep('done');
       window.scrollTo({ top: 0, behavior: 'smooth' });
-      setTimeout(() => navigate('/'), 1800);
+      setTimeout(() => navigate('/'), 2500);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to confirm payment.');
     } finally {
@@ -299,6 +380,8 @@ export default function CheckoutPage() {
   };
 
   if (step === 'done' && successOrderId) {
+    const onlineNotice =
+      'Your payment request has been sent! Please wait 1-2 hours for our team to verify and approve your transaction.';
     return (
       <div className="min-h-screen">
         <main className="px-6 lg:px-12 py-24">
@@ -307,10 +390,10 @@ export default function CheckoutPage() {
               <CheckCircle className="w-9 h-9 text-[#FFD700]" />
             </div>
             <h1 className="font-['Space_Grotesk'] text-2xl font-bold text-[#F4F6FA] mb-2">
-              Order placed
+              {donePaymentFlow === 'online' ? 'Payment request submitted' : 'Order placed'}
             </h1>
             <p className="text-[#A8ACB8] mb-6">
-              Thanks! Your order reference is:
+              {donePaymentFlow === 'online' ? onlineNotice : 'Thanks! Your order reference is:'}
             </p>
             <p className="font-mono text-xl font-bold text-[#FFD700] mb-8">
               {successOrderId}
@@ -487,6 +570,11 @@ export default function CheckoutPage() {
                     onClick={() => {
                       setPaymentChoice('cod');
                       setOnlineChannel(null);
+                      setReceiptFile(null);
+                      setReceiptPreviewUrl(null);
+                      setReceiptUrl(null);
+                      setUploadingReceipt(false);
+                      setBankTransfer({ accountName: '4RMTECH', accountNumber: '', transactionReference: '' });
                     }}
                     className={`px-4 py-4 rounded-2xl text-sm font-semibold transition-colors border ${
                       paymentChoice === 'cod'
@@ -498,7 +586,15 @@ export default function CheckoutPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPaymentChoice('online')}
+                    onClick={() => {
+                      setPaymentChoice('online');
+                      setOnlineChannel(null);
+                      setReceiptFile(null);
+                      setReceiptPreviewUrl(null);
+                      setReceiptUrl(null);
+                      setUploadingReceipt(false);
+                      setBankTransfer({ accountName: '4RMTECH', accountNumber: '', transactionReference: '' });
+                    }}
                     className={`px-4 py-4 rounded-2xl text-sm font-semibold transition-colors border ${
                       paymentChoice === 'online'
                         ? 'bg-[#FFD700] text-[#070A15] border-[#FFD700]'
@@ -517,7 +613,14 @@ export default function CheckoutPage() {
                         <button
                           key={ch.id}
                           type="button"
-                          onClick={() => setOnlineChannel(ch.id)}
+                          onClick={() => {
+                            setOnlineChannel(ch.id);
+                            setReceiptFile(null);
+                            setReceiptPreviewUrl(null);
+                            setReceiptUrl(null);
+                            setUploadingReceipt(false);
+                            setBankTransfer({ accountName: '4RMTECH', accountNumber: '', transactionReference: '' });
+                          }}
                           className={`px-3 py-2 rounded-full text-xs font-medium transition-colors ${
                             onlineChannel === ch.id
                               ? 'bg-[#FFD700] text-[#070A15]'
@@ -536,16 +639,126 @@ export default function CheckoutPage() {
                     <p className="text-sm text-[#F4F6FA] font-medium">
                       Pay with {ONLINE_CHANNELS.find((c) => c.id === onlineChannel)?.label}
                     </p>
-                    <p className="text-xs text-[#A8ACB8]">
-                      Scan the QR placeholder below. This demo does not verify bank transfers automatically.
-                    </p>
-                    <div className="mx-auto max-w-[220px] aspect-square rounded-2xl bg-gradient-to-br from-white/20 to-white/5 border-2 border-dashed border-white/20 flex items-center justify-center">
-                      <span className="text-[11px] text-[#A8ACB8] text-center px-4">
-                        QR placeholder
-                        <br />
-                        {onlineChannel}
-                      </span>
-                    </div>
+                    {isQrChannel ? (
+                      <>
+                        <p className="text-xs text-[#A8ACB8]">
+                          Scan the QR code below, complete your payment, then submit for verification.
+                        </p>
+                        <div className="mx-auto w-full max-w-[260px] aspect-square rounded-2xl bg-white/5 border border-white/20 flex items-center justify-center p-2">
+                          {selectedChannel?.qr ? (
+                            <img
+                              src={selectedChannel.qr}
+                              alt={`QR code for ${selectedChannel.label}`}
+                              className="w-full h-full object-contain rounded-xl"
+                            />
+                          ) : (
+                            <span className="text-[11px] text-[#A8ACB8] text-center px-4">
+                              QR not configured for {onlineChannel}
+                            </span>
+                          )}
+                        </div>
+
+                        {selectedChannel?.qr ? (
+                          <button
+                            type="button"
+                            onClick={downloadQrCode}
+                            className="w-full px-6 py-3 rounded-full bg-white/5 text-[#A8ACB8] hover:bg-white/10 hover:text-[#F4F6FA] transition-colors"
+                          >
+                            Download QR code
+                          </button>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs text-[#A8ACB8]">
+                          Bank transfer: enter your transaction reference and upload your receipt for verification.
+                        </p>
+
+                        <div className="space-y-4">
+                          <div className="rounded-2xl bg-white/5 border border-white/10 p-4 space-y-2">
+                            <p className="text-xs text-[#A8ACB8]">Transfer details</p>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                              <div>
+                                <p className="text-[11px] text-[#A8ACB8]">Account name</p>
+                                <p className="text-sm text-[#F4F6FA]">{bankTransfer.accountName}</p>
+                              </div>
+                              <div>
+                                <p className="text-[11px] text-[#A8ACB8]">Amount</p>
+                                <p className="text-sm text-[#F4F6FA]">{formatCurrency(placedTotal || summaryGrand)}</p>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                              <input
+                                value={bankTransfer.accountNumber}
+                                onChange={(e) =>
+                                  setBankTransfer((p) => ({ ...p, accountNumber: e.target.value }))
+                                }
+                                placeholder="Account number"
+                                title="Account number"
+                                aria-label="Account number"
+                                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700]"
+                              />
+                              <input
+                                value={bankTransfer.transactionReference}
+                                onChange={(e) =>
+                                  setBankTransfer((p) => ({ ...p, transactionReference: e.target.value }))
+                                }
+                                placeholder="Transaction reference"
+                                title="Transaction reference"
+                                aria-label="Transaction reference"
+                                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[#F4F6FA] placeholder:text-[#6b7280] focus:outline-none focus:border-[#FFD700]"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-3">
+                            <p className="text-xs text-[#A8ACB8]">
+                              Upload receipt (screenshot or photo). This is required for bank transfer verification.
+                            </p>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              title="Upload transfer receipt"
+                              aria-label="Upload transfer receipt"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0] ?? null;
+                                if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
+                                setReceiptFile(f);
+                                setReceiptUrl(null);
+                                setError('');
+                                if (f && f.type.startsWith('image/')) {
+                                  setReceiptPreviewUrl(URL.createObjectURL(f));
+                                } else {
+                                  setReceiptPreviewUrl(null);
+                                }
+                              }}
+                              className="w-full"
+                            />
+
+                            {receiptPreviewUrl && (
+                              <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                                <img
+                                  src={receiptPreviewUrl}
+                                  alt="Receipt preview"
+                                  className="w-full max-h-64 object-contain rounded-xl"
+                                />
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => void uploadReceipt()}
+                              disabled={uploadingReceipt || !receiptFile}
+                              className="w-full px-6 py-3 rounded-full bg-[#FFD700] text-[#070A15] font-semibold hover:bg-[#ffe44d] transition-colors disabled:opacity-60"
+                            >
+                              {uploadingReceipt ? 'Uploading receipt…' : receiptUrl ? 'Receipt uploaded' : 'Upload receipt'}
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -564,11 +777,22 @@ export default function CheckoutPage() {
                   disabled={
                     finalizing ||
                     !paymentChoice ||
-                    (paymentChoice === 'online' && !onlineChannel)
+                    (paymentChoice === 'online' &&
+                      (!onlineChannel ||
+                        (isBankChannel &&
+                          (!receiptUrl ||
+                            !bankTransfer.accountNumber.trim() ||
+                            !bankTransfer.transactionReference.trim()))))
                   }
                   className="w-full px-8 py-4 rounded-full bg-[#FFD700] text-[#070A15] font-semibold hover:bg-[#ffe44d] transition-colors disabled:opacity-50"
                 >
-                  {finalizing ? 'Confirming…' : 'Confirm payment & notify store'}
+                  {finalizing
+                    ? paymentChoice === 'online'
+                      ? 'Submitting…'
+                      : 'Confirming…'
+                    : paymentChoice === 'online'
+                      ? 'Submit for Verification'
+                      : 'Confirm payment & notify store'}
                 </button>
               </section>
             )}
