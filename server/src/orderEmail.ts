@@ -1,6 +1,14 @@
 import nodemailer from 'nodemailer';
+import path from 'node:path';
+import { getFirebaseAdmin } from './firebaseAdmin';
 
-export async function sendOrderNotifyEmail(params: { subject: string; text: string; receiptUrl?: string }) {
+export async function sendOrderNotifyEmail(params: {
+  subject: string;
+  text: string;
+  receiptUrl?: string;
+  receiptStoragePath?: string;
+  receiptAttachment?: { filename: string; contentType: string; dataBase64: string };
+}) {
   const toRaw = process.env.NOTIFY_TO_EMAILS ?? '';
   const recipients = toRaw
     .split(',')
@@ -40,9 +48,40 @@ export async function sendOrderNotifyEmail(params: { subject: string; text: stri
       }>
     | undefined;
 
-  if (params.receiptUrl) {
+  if (params.receiptStoragePath) {
     try {
-      // Download receipt and attach so the store can verify without opening the link.
+      const bucket = getFirebaseAdmin().storage().bucket();
+      const file = bucket.file(params.receiptStoragePath);
+      const [arr] = await file.download();
+      const [meta] = await file.getMetadata().catch(() => [undefined]);
+      const contentType = meta?.contentType ?? undefined;
+      attachments = [
+        {
+          filename: `payment-receipt-${path.basename(params.receiptStoragePath)}`,
+          content: arr,
+          contentType,
+        },
+      ];
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[orderEmail] Failed to attach receipt:', e);
+    }
+  } else if (params.receiptAttachment) {
+    try {
+      attachments = [
+        {
+          filename: params.receiptAttachment.filename,
+          content: Buffer.from(params.receiptAttachment.dataBase64, 'base64'),
+          contentType: params.receiptAttachment.contentType,
+        },
+      ];
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[orderEmail] Failed to attach inline receipt:', e);
+    }
+  } else if (params.receiptUrl) {
+    try {
+      // Legacy: attach from download URL.
       const r = await fetch(params.receiptUrl);
       const contentType = r.headers.get('content-type') ?? undefined;
       const arr = await r.arrayBuffer();

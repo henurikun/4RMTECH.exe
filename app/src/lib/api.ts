@@ -70,6 +70,50 @@ export type AdminProductPayload = {
   specs?: Record<string, string>;
 };
 
+export type ProductGroupType = 'variant' | 'set';
+
+export type ProductGroupMember = {
+  productId: string;
+  qtyPerSet?: number;
+  sortOrder?: number;
+  name?: string;
+  image?: string | null;
+  description?: string;
+  price?: number;
+};
+
+export type ProductGroupPayload = {
+  id?: string;
+  name: string;
+  category: string;
+  description?: string;
+  imageUrl?: string;
+  badge?: string | null;
+  price?: number;
+  originalPrice?: number | null;
+  groupType: ProductGroupType;
+  status?: 'active' | 'draft';
+  items?: ProductGroupMember[];
+};
+
+export type ProductGroupRow = {
+  id: string;
+  kind: 'group';
+  name: string;
+  category: string;
+  description: string;
+  imageUrl: string | null;
+  badge: string | null;
+  priceCents: number;
+  originalPriceCents: number | null;
+  currency: string;
+  groupType: ProductGroupType;
+  status: 'active' | 'draft';
+  inStock: boolean;
+  stockQuantity: number;
+  groupItems: ProductGroupMember[];
+};
+
 export type OrderNotifyPayload = {
   orderId: string;
   orderNumber: string;
@@ -77,9 +121,25 @@ export type OrderNotifyPayload = {
   onlineChannel?: string;
   customer: { name: string; email: string; phone: string; address: string };
   totalPhp: number;
-  items: { name: string; quantity: number; unitPrice: number }[];
-  /** Optional: present when customer submits an online bank transfer receipt for verification. */
+  items: {
+    name: string;
+    quantity: number;
+    unitPrice: number;
+    kind?: 'product' | 'group';
+    groupType?: ProductGroupType;
+    selectedGroupItemId?: string;
+    selectedGroupItemName?: string;
+  }[];
+  /** Storage path for the uploaded receipt (preferred; avoids browser CORS). */
+  receiptStoragePath?: string | null;
+  /** Optional: legacy support (download URL). */
   receiptUrl?: string | null;
+  /** Optional: attach receipt directly (no Firebase Storage needed). */
+  receiptAttachment?: {
+    filename: string;
+    contentType: string;
+    dataBase64: string;
+  } | null;
   /** Optional: bank transfer details shown to the store/admin for verification. */
   bankTransfer?: {
     accountName?: string;
@@ -89,6 +149,14 @@ export type OrderNotifyPayload = {
 };
 
 export type RepairStatus = 'new' | 'quoted' | 'scheduled' | 'in_progress' | 'done';
+export type InventoryOrderItem = {
+  productId: string;
+  quantity: number;
+  kind?: 'product' | 'group';
+  groupType?: ProductGroupType;
+  selectedGroupItemId?: string;
+  groupItems?: ProductGroupMember[];
+};
 export type RepairTicket = {
   id: string;
   name: string;
@@ -130,11 +198,12 @@ export const api = {
   },
   products: {
     list: () => request<ApiProductRow[]>('/api/products'),
+    groups: () => request<ProductGroupRow[]>('/api/product-groups'),
   },
   inventory: {
-    applyOrder: (input: { items: { productId: string; quantity: number }[] }) =>
+    applyOrder: (input: { items: InventoryOrderItem[] }) =>
       request<{ ok: true }>('/api/inventory/apply-order', { method: 'POST', body: JSON.stringify(input) }),
-    rollbackOrder: (input: { items: { productId: string; quantity: number }[] }) =>
+    rollbackOrder: (input: { items: InventoryOrderItem[] }) =>
       request<{ ok: true }>('/api/inventory/rollback-order', { method: 'POST', body: JSON.stringify(input) }),
   },
   orders: {
@@ -162,6 +231,26 @@ export const api = {
       }),
     deleteProduct: (id: string) => request<{ ok: true }>(`/api/admin/products/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     clearProducts: () => request<{ ok: true; deleted: number }>('/api/admin/products/clear', { method: 'DELETE' }),
+    groups: () => request<ProductGroupRow[]>('/api/admin/product-groups'),
+    createGroup: (input: ProductGroupPayload) =>
+      request<ProductGroupRow>('/api/admin/product-groups', { method: 'POST', body: JSON.stringify(input) }),
+    updateGroup: (id: string, input: Partial<ProductGroupPayload>) =>
+      request<ProductGroupRow>(`/api/admin/product-groups/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    deleteGroup: (id: string) =>
+      request<{ ok: true }>(`/api/admin/product-groups/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    addGroupItems: (groupId: string, input: { items: ProductGroupMember[] }) =>
+      request<ProductGroupRow>(`/api/admin/product-groups/${encodeURIComponent(groupId)}/products:add`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    removeGroupItems: (groupId: string, input: { productIds: string[] }) =>
+      request<ProductGroupRow>(`/api/admin/product-groups/${encodeURIComponent(groupId)}/products:remove`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
     firestoreOrders: () => request<Record<string, unknown>[]>('/api/admin/firestore-orders'),
     repairs: () => request<RepairTicket[]>('/api/admin/repairs'),
     updateRepair: (id: string, input: { status: RepairStatus; message?: string }) =>

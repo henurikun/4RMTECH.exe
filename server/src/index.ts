@@ -14,7 +14,7 @@ app.use(
     credentials: false,
   })
 );
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '15mb' }));
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 type ProductDoc = {
@@ -30,6 +30,28 @@ type ProductDoc = {
   stockQuantity: number;
   badge?: string | null;
   specs?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type ProductGroupType = 'variant' | 'set';
+type ProductGroupItem = {
+  productId: string;
+  qtyPerSet?: number;
+  sortOrder?: number;
+};
+type ProductGroupDoc = {
+  name: string;
+  description?: string;
+  category: string;
+  imageUrl?: string | null;
+  badge?: string | null;
+  priceCents: number;
+  originalPriceCents?: number | null;
+  currency?: string;
+  groupType: ProductGroupType;
+  status?: 'active' | 'draft';
+  items?: ProductGroupItem[];
   createdAt?: string;
   updatedAt?: string;
 };
@@ -105,6 +127,70 @@ function mapProduct(id: string, d: ProductDoc) {
     stockQuantity: Number(d.stockQuantity ?? 0),
     badge: d.badge ?? null,
     specs: d.specs ?? {},
+  };
+}
+
+function sanitizeGroupItems(items: ProductGroupItem[] | undefined): ProductGroupItem[] {
+  return (items ?? [])
+    .map((item, idx) => ({
+      productId: String(item.productId ?? '').trim(),
+      qtyPerSet: Math.max(1, Number(item.qtyPerSet ?? 1)),
+      sortOrder: Number(item.sortOrder ?? idx),
+    }))
+    .filter((item) => item.productId);
+}
+
+function computeGroupStock(d: ProductGroupDoc, rowsById: Map<string, ProductRow>) {
+  const items = sanitizeGroupItems(d.items);
+  if (items.length === 0) return { inStock: false, stockQuantity: 0 };
+
+  if (d.groupType === 'set') {
+    const possible = items.map((item) => {
+      const row = rowsById.get(item.productId);
+      if (!row) return 0;
+      return Math.floor(Number(row.stockQuantity ?? 0) / Math.max(1, Number(item.qtyPerSet ?? 1)));
+    });
+    const stockQuantity = Math.max(0, Math.min(...possible));
+    return { inStock: stockQuantity > 0, stockQuantity };
+  }
+
+  const stockQuantity = items.reduce((sum, item) => {
+    const row = rowsById.get(item.productId);
+    return sum + Math.max(0, Number(row?.stockQuantity ?? 0));
+  }, 0);
+  return { inStock: stockQuantity > 0, stockQuantity };
+}
+
+function mapProductGroup(id: string, d: ProductGroupDoc, rowsById: Map<string, ProductRow>) {
+  const items = sanitizeGroupItems(d.items);
+  const stock = computeGroupStock({ ...d, items }, rowsById);
+  const enriched = items.map((item) => {
+    const row = rowsById.get(item.productId);
+    return {
+      ...item,
+      name: row?.name ?? item.productId,
+      image: row?.imageUrl ?? null,
+      description: row?.description ?? '',
+      price: row ? Math.round(Number(row.priceCents ?? 0)) / 100 : 0,
+    };
+  });
+
+  return {
+    id,
+    kind: 'group' as const,
+    name: d.name,
+    description: d.description ?? '',
+    category: d.category,
+    imageUrl: d.imageUrl ?? null,
+    priceCents: d.groupType === 'variant' ? 0 : Number(d.priceCents ?? 0),
+    originalPriceCents: d.originalPriceCents ?? null,
+    currency: d.currency ?? 'PHP',
+    badge: d.badge ?? null,
+    groupType: d.groupType,
+    status: d.status ?? 'active',
+    inStock: stock.inStock,
+    stockQuantity: stock.stockQuantity,
+    groupItems: enriched,
   };
 }
 
@@ -311,9 +397,38 @@ app.get('/api/products/:id', async (req, res) => {
   return res.json(row);
 });
 
+app.get('/api/product-groups', async (_req, res) => {
+  await ensureProductCacheLoaded();
+  if (!productCache) return res.status(503).json({ error: 'Product cache not ready' });
+  const snap = await db().collection('productGroups').get();
+  const rows = snap.docs
+    .map((docSnap) => mapProductGroup(docSnap.id, docSnap.data() as ProductGroupDoc, productCache!.rowById))
+    .filter((row) => row.status === 'active')
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return res.json(rows);
+});
+
 app.post('/api/inventory/apply-order', requireAuth, async (req: AuthedRequest, res) => {
   const schema = z.object({
-    items: z.array(z.object({ productId: z.string().min(1), quantity: z.number().int().min(1) })),
+    items: z.array(
+      z
+        .object({
+          productId: z.string().min(1),
+          quantity: z.number().int().min(1),
+          kind: z.enum(['product', 'group']).optional(),
+          groupType: z.enum(['variant', 'set']).optional(),
+          selectedGroupItemId: z.string().optional(),
+          groupItems: z
+            .array(
+              z.object({
+                productId: z.string().min(1),
+                qtyPerSet: z.number().int().min(1).optional(),
+              })
+            )
+            .optional(),
+        })
+        .passthrough()
+    ),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
@@ -324,7 +439,22 @@ app.post('/api/inventory/apply-order', requireAuth, async (req: AuthedRequest, r
 
       const qtyById = new Map<string, number>();
       for (const line of parsed.data.items) {
-        qtyById.set(line.productId, (qtyById.get(line.productId) ?? 0) + line.quantity);
+        if (line.kind !== 'group') {
+          qtyById.set(line.productId, (qtyById.get(line.productId) ?? 0) + line.quantity);
+          continue;
+        }
+        if (line.groupType === 'variant') {
+          const selectedId = line.selectedGroupItemId;
+          if (!selectedId) throw new Error('Missing selected variant item.');
+          qtyById.set(selectedId, (qtyById.get(selectedId) ?? 0) + line.quantity);
+          continue;
+        }
+        const members = line.groupItems ?? [];
+        if (members.length === 0) throw new Error('Set bundle has no configured items.');
+        for (const item of members) {
+          const qty = line.quantity * Math.max(1, Number(item.qtyPerSet ?? 1));
+          qtyById.set(item.productId, (qtyById.get(item.productId) ?? 0) + qty);
+        }
       }
 
       const updatedAt = new Date().toISOString();
@@ -384,7 +514,25 @@ app.post('/api/inventory/apply-order', requireAuth, async (req: AuthedRequest, r
 
 app.post('/api/inventory/rollback-order', requireAuth, async (req: AuthedRequest, res) => {
   const schema = z.object({
-    items: z.array(z.object({ productId: z.string().min(1), quantity: z.number().int().min(1) })),
+    items: z.array(
+      z
+        .object({
+          productId: z.string().min(1),
+          quantity: z.number().int().min(1),
+          kind: z.enum(['product', 'group']).optional(),
+          groupType: z.enum(['variant', 'set']).optional(),
+          selectedGroupItemId: z.string().optional(),
+          groupItems: z
+            .array(
+              z.object({
+                productId: z.string().min(1),
+                qtyPerSet: z.number().int().min(1).optional(),
+              })
+            )
+            .optional(),
+        })
+        .passthrough()
+    ),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
@@ -395,7 +543,22 @@ app.post('/api/inventory/rollback-order', requireAuth, async (req: AuthedRequest
 
       const qtyById = new Map<string, number>();
       for (const line of parsed.data.items) {
-        qtyById.set(line.productId, (qtyById.get(line.productId) ?? 0) + line.quantity);
+        if (line.kind !== 'group') {
+          qtyById.set(line.productId, (qtyById.get(line.productId) ?? 0) + line.quantity);
+          continue;
+        }
+        if (line.groupType === 'variant') {
+          const selectedId = line.selectedGroupItemId;
+          if (!selectedId) throw new Error('Missing selected variant item.');
+          qtyById.set(selectedId, (qtyById.get(selectedId) ?? 0) + line.quantity);
+          continue;
+        }
+        const members = line.groupItems ?? [];
+        if (members.length === 0) throw new Error('Set bundle has no configured items.');
+        for (const item of members) {
+          const qty = line.quantity * Math.max(1, Number(item.qtyPerSet ?? 1));
+          qtyById.set(item.productId, (qtyById.get(item.productId) ?? 0) + qty);
+        }
       }
 
       const updatedAt = new Date().toISOString();
@@ -447,6 +610,13 @@ app.post('/api/inventory/rollback-order', requireAuth, async (req: AuthedRequest
   }
 });
 
+app.post('/api/uploads/receipt', requireAuth, async (_req: AuthedRequest, res) =>
+  res.status(410).json({
+    error:
+      'Receipt uploads are now handled in-memory (no Firebase Storage). Submit the receipt during /api/orders/notify-email.',
+  })
+);
+
 const productCreateSchema = z.object({
   id: z.string().min(1).optional(),
   sku: z.string().optional().nullable(),
@@ -462,6 +632,25 @@ const productCreateSchema = z.object({
   specs: z.record(z.string(), z.string()).optional(),
 });
 const productPatchSchema = productCreateSchema.partial();
+const groupItemSchema = z.object({
+  productId: z.string().min(1),
+  qtyPerSet: z.number().int().min(1).optional(),
+  sortOrder: z.number().int().optional(),
+});
+const productGroupCreateSchema = z.object({
+  id: z.string().min(1).optional(),
+  name: z.string().min(1),
+  category: z.string().min(1),
+  description: z.string().optional(),
+  imageUrl: z.string().optional(),
+  badge: z.string().nullable().optional(),
+  price: z.number().nonnegative(),
+  originalPrice: z.number().nonnegative().nullable().optional(),
+  groupType: z.enum(['variant', 'set']),
+  status: z.enum(['active', 'draft']).optional(),
+  items: z.array(groupItemSchema).optional(),
+});
+const productGroupPatchSchema = productGroupCreateSchema.partial();
 
 app.post('/api/admin/products', requireAuth, requireAdmin, async (req: AuthedRequest, res) => {
   const parsed = productCreateSchema.safeParse(req.body);
@@ -573,6 +762,125 @@ app.delete('/api/admin/products/:id', requireAuth, requireAdmin, async (req: Aut
   return res.json({ ok: true });
 });
 
+app.get('/api/admin/product-groups', requireAuth, requireAdmin, async (_req: AuthedRequest, res) => {
+  await ensureProductCacheLoaded();
+  if (!productCache) return res.status(503).json({ error: 'Product cache not ready' });
+  const snap = await db().collection('productGroups').get();
+  const rows = snap.docs
+    .map((docSnap) => mapProductGroup(docSnap.id, docSnap.data() as ProductGroupDoc, productCache!.rowById))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return res.json(rows);
+});
+
+app.post('/api/admin/product-groups', requireAuth, requireAdmin, async (req: AuthedRequest, res) => {
+  const parsed = productGroupCreateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
+  const input = parsed.data;
+  const id =
+    input.id?.trim() ??
+    makeStableProductId(String(input.name ?? ''), `group-${String(input.category ?? '')}`);
+  const now = new Date().toISOString();
+  const doc: ProductGroupDoc = {
+    name: input.name,
+    description: input.description ?? '',
+    category: input.category,
+    imageUrl: input.imageUrl ?? null,
+    badge: input.badge ?? null,
+    priceCents: input.groupType === 'variant' ? 0 : Math.round(input.price * 100),
+    originalPriceCents:
+      input.groupType === 'variant'
+        ? null
+        : input.originalPrice != null
+          ? Math.round(input.originalPrice * 100)
+          : null,
+    currency: 'PHP',
+    groupType: input.groupType,
+    status: input.status ?? 'active',
+    items: sanitizeGroupItems(input.items),
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db().collection('productGroups').doc(id).set(doc);
+  await ensureProductCacheLoaded();
+  if (!productCache) return res.status(503).json({ error: 'Product cache not ready' });
+  return res.json(mapProductGroup(id, doc, productCache.rowById));
+});
+
+app.patch('/api/admin/product-groups/:id', requireAuth, requireAdmin, async (req: AuthedRequest, res) => {
+  const parsed = productGroupPatchSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
+  const id = String(req.params.id);
+  const ref = db().collection('productGroups').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return res.status(404).json({ error: 'Not found' });
+  const cur = snap.data() as ProductGroupDoc;
+  const d = parsed.data;
+  const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+  if (d.name !== undefined) updates.name = d.name;
+  if (d.description !== undefined) updates.description = d.description;
+  if (d.category !== undefined) updates.category = d.category;
+  if (d.imageUrl !== undefined) updates.imageUrl = d.imageUrl ?? null;
+  if (d.badge !== undefined) updates.badge = d.badge ?? null;
+  if (d.price !== undefined && d.groupType !== 'variant') updates.priceCents = Math.round(d.price * 100);
+  if (d.originalPrice !== undefined) {
+    updates.originalPriceCents =
+      d.groupType === 'variant' ? null : d.originalPrice != null ? Math.round(d.originalPrice * 100) : null;
+  }
+  if (d.groupType !== undefined) updates.groupType = d.groupType;
+  if (d.groupType === 'variant') {
+    updates.priceCents = 0;
+    updates.originalPriceCents = null;
+  }
+  if (d.status !== undefined) updates.status = d.status;
+  if (d.items !== undefined) updates.items = sanitizeGroupItems(d.items);
+  await ref.update(updates);
+  await ensureProductCacheLoaded();
+  if (!productCache) return res.status(503).json({ error: 'Product cache not ready' });
+  return res.json(mapProductGroup(id, { ...cur, ...(updates as Partial<ProductGroupDoc>) }, productCache.rowById));
+});
+
+app.delete('/api/admin/product-groups/:id', requireAuth, requireAdmin, async (req: AuthedRequest, res) => {
+  const id = String(req.params.id);
+  await db().collection('productGroups').doc(id).delete();
+  return res.json({ ok: true });
+});
+
+app.post('/api/admin/product-groups/:id/products:add', requireAuth, requireAdmin, async (req: AuthedRequest, res) => {
+  const schema = z.object({ items: z.array(groupItemSchema).min(1) });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
+  const id = String(req.params.id);
+  const ref = db().collection('productGroups').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return res.status(404).json({ error: 'Not found' });
+  const cur = snap.data() as ProductGroupDoc;
+  const merged = [...sanitizeGroupItems(cur.items), ...sanitizeGroupItems(parsed.data.items)];
+  const dedup = new Map<string, ProductGroupItem>();
+  merged.forEach((item, idx) => dedup.set(item.productId, { ...item, sortOrder: item.sortOrder ?? idx }));
+  await ref.update({ items: [...dedup.values()], updatedAt: new Date().toISOString() });
+  await ensureProductCacheLoaded();
+  if (!productCache) return res.status(503).json({ error: 'Product cache not ready' });
+  const next = { ...cur, items: [...dedup.values()] };
+  return res.json(mapProductGroup(id, next, productCache.rowById));
+});
+
+app.post('/api/admin/product-groups/:id/products:remove', requireAuth, requireAdmin, async (req: AuthedRequest, res) => {
+  const schema = z.object({ productIds: z.array(z.string().min(1)).min(1) });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
+  const id = String(req.params.id);
+  const ref = db().collection('productGroups').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return res.status(404).json({ error: 'Not found' });
+  const cur = snap.data() as ProductGroupDoc;
+  const removeSet = new Set(parsed.data.productIds);
+  const nextItems = sanitizeGroupItems(cur.items).filter((item) => !removeSet.has(item.productId));
+  await ref.update({ items: nextItems, updatedAt: new Date().toISOString() });
+  await ensureProductCacheLoaded();
+  if (!productCache) return res.status(503).json({ error: 'Product cache not ready' });
+  return res.json(mapProductGroup(id, { ...cur, items: nextItems }, productCache.rowById));
+});
+
 const repairStatusSchema = z.enum(['new', 'quoted', 'scheduled', 'in_progress', 'done']);
 
 app.post('/api/repairs', async (req, res) => {
@@ -639,7 +947,16 @@ app.post('/api/orders/notify-email', requireAuth, async (req: AuthedRequest, res
     orderNumber: z.string(),
     paymentFlow: z.enum(['cod', 'online']),
     onlineChannel: z.string().optional(),
+    receiptStoragePath: z.string().optional().nullable(),
     receiptUrl: z.string().url().optional().nullable(),
+    receiptAttachment: z
+      .object({
+        filename: z.string().min(1),
+        contentType: z.string().min(1),
+        dataBase64: z.string().min(1),
+      })
+      .optional()
+      .nullable(),
     bankTransfer: z
       .object({
         accountName: z.string().optional(),
@@ -654,7 +971,17 @@ app.post('/api/orders/notify-email', requireAuth, async (req: AuthedRequest, res
       address: z.string(),
     }),
     totalPhp: z.number(),
-    items: z.array(z.object({ name: z.string(), quantity: z.number(), unitPrice: z.number() })),
+    items: z.array(
+      z.object({
+        name: z.string(),
+        quantity: z.number(),
+        unitPrice: z.number(),
+        kind: z.enum(['product', 'group']).optional(),
+        groupType: z.enum(['variant', 'set']).optional(),
+        selectedGroupItemId: z.string().optional(),
+        selectedGroupItemName: z.string().optional(),
+      })
+    ),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
@@ -670,7 +997,15 @@ app.post('/api/orders/notify-email', requireAuth, async (req: AuthedRequest, res
     `Total: PHP ${d.totalPhp.toLocaleString('en-PH', { maximumFractionDigits: 0 })}`,
     '',
     'Items:',
-    ...d.items.map((i) => `  - ${i.name} x${i.quantity} @ PHP ${i.unitPrice.toLocaleString('en-PH', { maximumFractionDigits: 0 })}`),
+    ...d.items.map((i) => {
+      const tag =
+        i.kind === 'group'
+          ? i.groupType === 'variant'
+            ? ` (Variant: ${i.selectedGroupItemName ?? i.selectedGroupItemId ?? 'selected'})`
+            : ' (Set bundle)'
+          : '';
+      return `  - ${i.name}${tag} x${i.quantity} @ PHP ${i.unitPrice.toLocaleString('en-PH', { maximumFractionDigits: 0 })}`;
+    }),
     '',
     'Customer (shipping):',
     `  ${d.customer.name}`,
@@ -687,7 +1022,13 @@ app.post('/api/orders/notify-email', requireAuth, async (req: AuthedRequest, res
             ? `  - Bank transfer account: ${d.bankTransfer.accountName ?? ''} ${d.bankTransfer.accountNumber ?? ''}`.trim()
             : '  - QR payment verification: no receipt uploaded',
           ...(d.bankTransfer ? [`  - Transaction reference: ${d.bankTransfer?.transactionReference ?? '(not provided)'}`] : []),
-          `  - Receipt URL: ${d.receiptUrl ?? '(not provided)'}`,
+          `  - Receipt: ${
+            d.receiptAttachment
+              ? `attached (${d.receiptAttachment.filename})`
+              : d.receiptStoragePath
+                ? `storage://${d.receiptStoragePath}`
+                : d.receiptUrl ?? '(not provided)'
+          }`,
           '  - Please verify and approve manually (customer will wait 1-2 hours).',
         ]
       : []),
@@ -697,6 +1038,8 @@ app.post('/api/orders/notify-email', requireAuth, async (req: AuthedRequest, res
       subject: `[4RMTECH] Order ${d.orderNumber} — ${payLine}`,
       text,
       receiptUrl: d.receiptUrl ?? undefined,
+      receiptStoragePath: d.receiptStoragePath ?? undefined,
+      receiptAttachment: d.receiptAttachment ?? undefined,
     });
     return res.json({ ok: true });
   } catch (e) {

@@ -5,4 +5,6 @@ export interface CartItem {
   productId: string;
   quantity: number;
   productData?: Product;
+  selectedGroupItemId?: string;
+  selectedGroupItemIds?: string[];
 }

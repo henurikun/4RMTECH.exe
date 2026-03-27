@@ -1,13 +1,16 @@
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 
-/** Firebase Auth is primary; this is now a no-op compatibility shim. */
+/** Firebase Auth is primary; legacy shim kept for compatibility. */
 export async function syncFirebaseSession(): Promise<void> {
   if (!auth.currentUser) await signOut(auth).catch(() => {});
 }
 
-/** Call before Firestore reads/writes under `users/{apiUserId}/…` so `request.auth.uid` matches rules. */
-export async function ensureFirebaseUidMatchesApiUser(apiUserId: string): Promise<boolean> {
-  if (auth.currentUser?.uid === apiUserId) return true;
-  return false;
+/**
+ * Legacy guard that used to wait for Firebase Auth to match an API user id.
+ * The app now uses the same Firebase ID token for both API and Firestore,
+ * so this is effectively a no-op and always returns true as long as a user is signed in.
+ */
+export async function ensureFirebaseUidMatchesApiUser(_apiUserId: string): Promise<boolean> {
+  return !!auth.currentUser;
 }

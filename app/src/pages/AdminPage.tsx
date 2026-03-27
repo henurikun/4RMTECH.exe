@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Product } from '../data/products';
 import { Link, useNavigate } from 'react-router-dom';
-import { ClipboardList, Filter, MessageSquare, Plus, Pencil, Trash2, X, ArrowLeft, Package, Inbox, Upload } from 'lucide-react';
+import { ClipboardList, Filter, MessageSquare, Plus, Pencil, Trash2, X, ArrowLeft, Package, Inbox, Upload, ChevronDown } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCatalog } from '../context/CatalogContext';
-import { api, type RepairTicket } from '../lib/api';
+import { api, type ProductGroupRow, type RepairTicket } from '../lib/api';
 
 type Mode = 'all' | string;
 type Panel = 'products' | 'inbox';
@@ -64,6 +64,18 @@ interface FormState {
   specsText: string;
 }
 
+interface GroupFormState {
+  id: string;
+  name: string;
+  category: string;
+  groupType: 'variant' | 'set';
+  price: string;
+  originalPrice: string;
+  imageUrl: string;
+  badge: string;
+  description: string;
+}
+
 const emptyForm: FormState = {
   id: '',
   name: '',
@@ -75,6 +87,18 @@ const emptyForm: FormState = {
   stockQuantity: '0',
   description: '',
   specsText: '',
+};
+
+const emptyGroupForm: GroupFormState = {
+  id: '',
+  name: '',
+  category: 'devices',
+  groupType: 'variant',
+  price: '0',
+  originalPrice: '',
+  imageUrl: '/images/laptop_desk.jpg',
+  badge: '',
+  description: '',
 };
 
 function productToFormState(product: Product): FormState {
@@ -244,6 +268,7 @@ export default function AdminPage() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showGroupForm, setShowGroupForm] = useState(false);
   const [formState, setFormState] = useState<FormState>(emptyForm);
   const [inventorySearch, setInventorySearch] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -251,6 +276,13 @@ export default function AdminPage() {
   const [clearingInventory, setClearingInventory] = useState(false);
   const [uploadingCsv, setUploadingCsv] = useState(false);
   const [uploadSummary, setUploadSummary] = useState('');
+  const [groups, setGroups] = useState<ProductGroupRow[]>([]);
+  const [groupForm, setGroupForm] = useState<GroupFormState>(emptyGroupForm);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [expandedGroupIds, setExpandedGroupIds] = useState<string[]>([]);
+  const [draggingProductId, setDraggingProductId] = useState<string | null>(null);
+  const [dropTargetGroupId, setDropTargetGroupId] = useState<string | null>(null);
+  const [dragGhost, setDragGhost] = useState<{ name: string; x: number; y: number } | null>(null);
 
   const [repairs, setRepairs] = useState<RepairRequest[]>([]);
   const [repairResponses, setRepairResponses] = useState<Record<string, RepairResponse>>({});
@@ -286,6 +318,21 @@ export default function AdminPage() {
       setRepairsLoading(false);
     }
   };
+
+  const loadGroupsFromApi = async () => {
+    try {
+      const rows = await api.admin.groups();
+      setGroups(rows);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Failed to load groups');
+      setGroups([]);
+    }
+  };
+
+  useEffect(() => {
+    if (panel !== 'products') return;
+    void loadGroupsFromApi();
+  }, [panel]);
 
   useEffect(() => {
     if (panel !== 'inbox' || inboxTab !== 'repairs') return;
@@ -332,16 +379,23 @@ export default function AdminPage() {
         : products.filter(product => product.category === mode),
     [mode, products]
   );
+  const groupedMemberIds = useMemo(() => {
+    const s = new Set<string>();
+    groups.forEach((g) => g.groupItems.forEach((i) => s.add(i.productId)));
+    return s;
+  }, [groups]);
   const displayedProducts = useMemo(() => {
+    const source = filteredProducts.filter((p) => p.kind === 'group' || !groupedMemberIds.has(p.id));
     const q = inventorySearch.trim().toLowerCase();
-    if (!q) return filteredProducts;
-    return filteredProducts.filter(
+    if (!q) return source;
+    return source.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.category.toLowerCase().includes(q) ||
         String(p.price).includes(q)
     );
-  }, [filteredProducts, inventorySearch]);
+  }, [filteredProducts, inventorySearch, groupedMemberIds]);
+  const groupsById = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups]);
 
   const startAdd = () => {
     setEditingId(null);
@@ -368,6 +422,134 @@ export default function AdminPage() {
       await refetch();
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleGroupFormChange = (field: keyof GroupFormState, value: string) => {
+    setGroupForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleGroupSave = async () => {
+    if (!groupForm.name.trim()) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      const payload = {
+        id: groupForm.id.trim() || undefined,
+        name: groupForm.name.trim(),
+        category: groupForm.category,
+        groupType: groupForm.groupType,
+        description: groupForm.description,
+        imageUrl: groupForm.imageUrl,
+        badge: groupForm.badge || null,
+        price: Number(groupForm.price) || 0,
+        originalPrice: groupForm.originalPrice ? Number(groupForm.originalPrice) : null,
+        status: 'active' as const,
+      };
+      if (editingGroupId) await api.admin.updateGroup(editingGroupId, payload);
+      else await api.admin.createGroup(payload);
+      await loadGroupsFromApi();
+      await refetch();
+      setGroupForm(emptyGroupForm);
+      setEditingGroupId(null);
+      setShowGroupForm(false);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Failed to save group');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const startEditGroup = (group: ProductGroupRow) => {
+    setEditingGroupId(group.id);
+    setGroupForm({
+      id: group.id,
+      name: group.name,
+      category: group.category,
+      groupType: group.groupType,
+      price: String(Math.round(group.priceCents) / 100),
+      originalPrice: group.originalPriceCents != null ? String(Math.round(group.originalPriceCents) / 100) : '',
+      imageUrl: group.imageUrl ?? '/images/laptop_desk.jpg',
+      badge: group.badge ?? '',
+      description: group.description,
+    });
+    setShowGroupForm(true);
+  };
+
+  const handleDeleteGroup = async (groupId: string) => {
+    if (!window.confirm('Delete this group?')) return;
+    setSaving(true);
+    try {
+      await api.admin.deleteGroup(groupId);
+      await loadGroupsFromApi();
+      await refetch();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Failed to delete group');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addProductToGroup = async (groupId: string, productId: string) => {
+    setSaving(true);
+    try {
+      await api.admin.addGroupItems(groupId, {
+        items: [{ productId, qtyPerSet: 1, sortOrder: 999 }],
+      });
+      await loadGroupsFromApi();
+      await refetch();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Failed to add product to group');
+    } finally {
+      setSaving(false);
+      setDropTargetGroupId(null);
+      setDraggingProductId(null);
+    }
+  };
+
+  const beginCustomDrag = (event: React.MouseEvent, product: Product) => {
+    if (product.kind === 'group') return;
+    event.preventDefault();
+    setDraggingProductId(product.id);
+    setDragGhost({ name: product.name, x: event.clientX, y: event.clientY });
+    document.body.style.userSelect = 'none';
+    let activeGroupTarget: string | null = null;
+
+    const onMove = (e: MouseEvent) => {
+      setDragGhost((prev) => (prev ? { ...prev, x: e.clientX, y: e.clientY } : prev));
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const groupRow = el?.closest('tr[data-group-id]') as HTMLElement | null;
+      const gid = groupRow?.dataset.groupId ?? null;
+      activeGroupTarget = gid;
+      setDropTargetGroupId(gid);
+    };
+
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+      if (activeGroupTarget && product.id !== activeGroupTarget) {
+        void addProductToGroup(activeGroupTarget, product.id);
+      }
+      setDragGhost(null);
+      setDraggingProductId(null);
+      setDropTargetGroupId(null);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const removeProductFromGroup = async (groupId: string, productId: string) => {
+    setSaving(true);
+    try {
+      await api.admin.removeGroupItems(groupId, { productIds: [productId] });
+      await loadGroupsFromApi();
+      await refetch();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Failed to remove product from group');
     } finally {
       setSaving(false);
     }
@@ -591,6 +773,20 @@ export default function AdminPage() {
                 Add Product
               </button>
             )}
+            {panel === 'products' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingGroupId(null);
+                  setGroupForm(emptyGroupForm);
+                  setShowGroupForm(true);
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 text-[#F4F6FA] text-sm font-semibold hover:bg-white/20 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Add Group
+              </button>
+            )}
 
             {panel === 'products' && (
               <button
@@ -632,7 +828,7 @@ export default function AdminPage() {
       </header>
 
       {panel === 'products' ? (
-        <>
+        <div>
           {/* Filters */}
           <section className="px-6 lg:px-12 py-6 border-b border-white/5">
             <div className="flex flex-wrap items-center gap-4">
@@ -702,13 +898,56 @@ export default function AdminPage() {
                   </thead>
                   <tbody>
                     {displayedProducts.map((product) => {
+                      const isGroup = product.kind === 'group';
+                      const groupMeta = isGroup ? groupsById.get(product.id) : undefined;
+                      const isExpanded = expandedGroupIds.includes(product.id);
                       const lowStock = (product.stockQuantity ?? 0) > 0 && (product.stockQuantity ?? 0) <= 5;
-                      return (
+                      const mainRow = (
                         <tr
-                          key={product.id}
-                          className={`${lowStock ? 'bg-red-500/10' : ''} border-t border-white/5`}
+                          key={`${product.id}-main`}
+                          data-group-id={isGroup ? product.id : undefined}
+                          className={`${lowStock ? 'bg-red-500/10' : ''} ${
+                            dropTargetGroupId === product.id ? 'bg-green-500/20' : ''
+                          } border-t border-white/5`}
                         >
-                          <td className="px-4 py-3 text-[#F4F6FA]">{product.name}</td>
+                          <td className="px-4 py-3 text-[#F4F6FA]">
+                            <div className="flex items-center gap-2">
+                              {!isGroup ? (
+                                <button
+                                  type="button"
+                                  onMouseDown={(e) => beginCustomDrag(e, product)}
+                                  className={`inline-flex items-center justify-center w-6 h-6 rounded bg-white/5 ${
+                                    draggingProductId === product.id ? 'opacity-50 scale-95' : 'hover:bg-white/10'
+                                  } transition-all`}
+                                  title="Drag item to group"
+                                >
+                                  <span className="text-xs">::</span>
+                                </button>
+                              ) : null}
+                              {isGroup ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedGroupIds((prev) =>
+                                      prev.includes(product.id)
+                                        ? prev.filter((id) => id !== product.id)
+                                        : [...prev, product.id]
+                                    )
+                                  }
+                                  className="inline-flex items-center justify-center w-6 h-6 rounded bg-white/5 hover:bg-white/10"
+                                  aria-label={`Toggle ${product.name} group items`}
+                                >
+                                  <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                </button>
+                              ) : null}
+                              <span>{product.name}</span>
+                              {isGroup ? (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FFD700]/15 text-[#FFD700] uppercase">
+                                  Group
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
                           <td className="px-4 py-3 text-[#FFD700] font-semibold">
                             ₱{product.price.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
                           </td>
@@ -719,17 +958,19 @@ export default function AdminPage() {
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-2">
                               <button
-                                onClick={() => startEdit(product)}
+                                onClick={() => (isGroup && groupMeta ? startEditGroup(groupMeta) : startEdit(product))}
                                 className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-[#F4F6FA] transition-colors"
-                                title="Edit product"
+                                title={isGroup ? 'Edit group' : 'Edit product'}
                                 aria-label={`Edit ${product.name}`}
                               >
                                 <Pencil className="w-4 h-4" />
                               </button>
                               <button
-                                onClick={() => handleDelete(product.id)}
+                                onClick={() =>
+                                  isGroup && groupMeta ? void handleDeleteGroup(groupMeta.id) : void handleDelete(product.id)
+                                }
                                 className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
-                                title="Delete product"
+                                title={isGroup ? 'Delete group' : 'Delete product'}
                                 aria-label={`Delete ${product.name}`}
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -738,12 +979,144 @@ export default function AdminPage() {
                           </td>
                         </tr>
                       );
+                      const detailsRow = isGroup && isExpanded ? (
+                          <tr key={`${product.id}-details`} className="border-t border-white/5 bg-white/[0.02]">
+                            <td colSpan={5} className="px-6 py-4">
+                              {!groupMeta || groupMeta.groupItems.length === 0 ? (
+                                <p className="text-xs text-[#A8ACB8]">No items in this group yet. Drag products onto this row to add.</p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {groupMeta.groupItems.map((item) => (
+                                    <div key={item.productId} className="flex items-center justify-between text-sm">
+                                      <span className="text-[#F4F6FA]">
+                                        {item.name ?? item.productId}
+                                        {groupMeta.groupType === 'set' ? ` x${item.qtyPerSet ?? 1}` : ''}
+                                        {groupMeta.groupType === 'variant' && typeof item.price === 'number'
+                                          ? ` - ₱${item.price.toLocaleString('en-PH', { maximumFractionDigits: 0 })}`
+                                          : ''}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => void removeProductFromGroup(groupMeta.id, item.productId)}
+                                        className="text-xs px-2 py-1 rounded bg-red-500/10 text-red-300 hover:bg-red-500/20"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ) : null;
+                      return [
+                        mainRow,
+                        detailsRow,
+                      ];
+                      
                     })}
                   </tbody>
                 </table>
               </div>
             )}
           </main>
+
+          {showGroupForm && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div
+                className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                onClick={() => {
+                  setShowGroupForm(false);
+                  setEditingGroupId(null);
+                }}
+              />
+              <div className="relative w-full max-w-2xl bg-[#070A15]/95 border border-white/10 rounded-2xl shadow-2xl p-6 space-y-3">
+                <h2 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F4F6FA]">
+                  {editingGroupId ? 'Edit Group' : 'Add Group'}
+                </h2>
+                <input
+                  value={groupForm.name}
+                  onChange={(e) => handleGroupFormChange('name', e.target.value)}
+                  placeholder="Group name"
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA]"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <select
+                    value={groupForm.groupType}
+                    onChange={(e) => handleGroupFormChange('groupType', e.target.value)}
+                    aria-label="Group type"
+                    title="Group type"
+                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA]"
+                  >
+                    <option value="variant" className="text-[#111827]">Variant</option>
+                    <option value="set" className="text-[#111827]">Set bundle</option>
+                  </select>
+                  <select
+                    value={groupForm.category}
+                    onChange={(e) => handleGroupFormChange('category', e.target.value)}
+                    aria-label="Group category"
+                    title="Group category"
+                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA]"
+                  >
+                    {categoryOptions.map((cat) => (
+                      <option key={cat} value={cat} className="text-[#111827]">{formatCategoryName(cat)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    value={groupForm.price}
+                    onChange={(e) => handleGroupFormChange('price', e.target.value)}
+                    placeholder="Price"
+                    type="number"
+                    min={0}
+                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA]"
+                  />
+                  <input
+                    value={groupForm.originalPrice}
+                    onChange={(e) => handleGroupFormChange('originalPrice', e.target.value)}
+                    placeholder="Original price"
+                    type="number"
+                    min={0}
+                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA]"
+                  />
+                </div>
+                <input
+                  value={groupForm.imageUrl}
+                  onChange={(e) => handleGroupFormChange('imageUrl', e.target.value)}
+                  placeholder="Image URL"
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA]"
+                />
+                <textarea
+                  value={groupForm.description}
+                  onChange={(e) => handleGroupFormChange('description', e.target.value)}
+                  placeholder="Description"
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-[#F4F6FA] resize-none"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGroupForm(false);
+                      setEditingGroupId(null);
+                    }}
+                    className="px-4 py-2 rounded-full bg-white/5 text-[#A8ACB8] hover:bg-white/10"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleGroupSave()}
+                    disabled={saving}
+                    className="px-4 py-2 rounded-full bg-[#FFD700] text-[#070A15] font-semibold disabled:opacity-60"
+                  >
+                    {editingGroupId ? 'Save Group' : 'Create Group'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Slide-over form */}
           {showForm && (
@@ -978,7 +1351,7 @@ export default function AdminPage() {
           </div>
         </div>
           )}
-        </>
+        </div>
       ) : (
         <main className="px-6 lg:px-12 py-10">
           <div className="max-w-6xl mx-auto">
@@ -1073,7 +1446,7 @@ export default function AdminPage() {
                 )}
               </div>
             ) : (
-              <>
+              <div>
             <div className="flex items-center justify-between gap-4 mb-6">
               <div>
                 <h2 className="font-['Space_Grotesk'] text-xl font-bold text-[#F4F6FA]">
@@ -1257,10 +1630,18 @@ export default function AdminPage() {
                 )}
               </section>
             </div>
-              </>
+              </div>
             )}
           </div>
         </main>
+      )}
+      {dragGhost && (
+        <div
+          className="fixed z-[80] pointer-events-none px-3 py-2 rounded-xl bg-[#111318] border border-[#FFD700]/40 shadow-lg text-sm text-[#F4F6FA] transition-transform"
+          style={{ left: dragGhost.x + 14, top: dragGhost.y + 14, transform: 'translate3d(0,0,0)' }}
+        >
+          {dragGhost.name}
+        </div>
       )}
     </div>
   );

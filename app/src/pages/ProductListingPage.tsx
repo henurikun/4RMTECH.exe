@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Filter, ShoppingCart, Check, Star } from 'lucide-react';
 import type { Product } from '../data/products';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { useCatalog } from '../context/CatalogContext';
 import { getStockQuantity, isPurchasable } from '../lib/productAvailability';
+import ProductQuickViewModal from '../components/ProductQuickViewModal';
 
 const formatCategoryName = (category: string) =>
   category
@@ -15,12 +16,14 @@ const formatCategoryName = (category: string) =>
     .join(' ');
 
 export default function ProductListingPage() {
+  const navigate = useNavigate();
   const { category } = useParams<{ category: string }>();
   const [searchParams] = useSearchParams();
   const q = (searchParams.get('q') ?? '').trim().toLowerCase();
   const [products, setProducts] = useState<Product[]>([]);
   const [filter, setFilter] = useState<'all' | 'budget' | 'premium'>('all');
   const [sort, setSort] = useState<'price-low' | 'price-high' | 'featured'>('featured');
+  const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const { addItem, totalItems, items } = useCart();
   const { user } = useAuth();
   const { products: catalogProducts } = useCatalog();
@@ -83,13 +86,25 @@ export default function ProductListingPage() {
         filtered.sort((a, b) => b.price - a.price);
       }
 
-      filtered = filtered.filter((p) => isPurchasable(p));
+      filtered = filtered.filter((p) => p.kind === 'group' || isPurchasable(p));
 
       setProducts(filtered);
     }
   }, [category, filter, q, sort, catalogProducts]);
 
   const isInCart = (productId: string) => items.some((i) => i.productId === productId);
+  const handleBuyNow = (product: Product) => {
+    navigate('/checkout', {
+      state: {
+        buyNow: {
+          productId: product.id,
+          quantity: 1,
+          productData: product,
+        },
+      },
+    });
+  };
+  const openQuickView = (product: Product) => setQuickViewProduct(product);
 
   return (
     <div className="min-h-screen">
@@ -208,11 +223,13 @@ export default function ProductListingPage() {
               >
                 {/* Image */}
                 <div className="relative aspect-[4/3] overflow-hidden">
-                  <img
-                    src={product.image}
-                    alt={product.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
+                  <button type="button" onClick={() => openQuickView(product)} className="w-full h-full">
+                    <img
+                      src={product.image}
+                      alt={product.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                  </button>
                   {product.badge && (
                     <div className="absolute top-4 left-4 px-3 py-1 bg-[#FFD700] text-[#070A15] text-xs font-bold rounded-full">
                       {product.badge}
@@ -251,40 +268,61 @@ export default function ProductListingPage() {
                   </div>
 
                   {/* Price & CTA */}
-                  <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                  <div className="flex items-center justify-between pt-4 border-t border-white/5 gap-2">
                     <div>
                       <span className="font-['Space_Grotesk'] text-2xl font-bold text-[#FFD700]">
-                        {formatCurrency(product.price)}
+                        {product.kind === 'group' && product.groupType === 'variant'
+                          ? 'Select variant'
+                          : formatCurrency(product.price)}
                       </span>
-                      {product.originalPrice && (
+                      {product.originalPrice && !(product.kind === 'group' && product.groupType === 'variant') && (
                         <span className="ml-2 text-sm text-[#A8ACB8] line-through">
                           {formatCurrency(product.originalPrice)}
                         </span>
                       )}
                     </div>
                     
-                    <button
-                      onClick={() => addItem(product.id, 1)}
-                      disabled={user?.role === 'ADMIN' || isInCart(product.id)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-colors ${
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          if (product.kind === 'group') openQuickView(product);
+                          else handleBuyNow(product);
+                        }}
+                        disabled={user?.role === 'ADMIN'}
+                        className={`px-4 py-2 rounded-full font-medium transition-colors ${
+                          user?.role === 'ADMIN'
+                            ? 'bg-white/5 text-[#6B7280] cursor-not-allowed'
+                            : 'bg-white/10 text-[#F4F6FA] hover:bg-white/20'
+                        }`}
+                      >
+                        Buy Now
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (product.kind === 'group') openQuickView(product);
+                          else addItem(product.id, 1);
+                        }}
+                        disabled={user?.role === 'ADMIN' || isInCart(product.id)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-colors ${
                         user?.role === 'ADMIN'
                           ? 'bg-white/5 text-[#6B7280] cursor-not-allowed'
                           : isInCart(product.id)
                             ? 'bg-green-500/20 text-green-400 cursor-default'
                             : 'bg-[#FFD700] text-[#070A15] hover:bg-[#ffe44d]'
-                      }`}
-                    >
-                      {user?.role === 'ADMIN' ? (
-                        'Admin'
-                      ) : isInCart(product.id) ? (
-                        <>
-                          <Check className="w-4 h-4" />
-                          Added
-                        </>
-                      ) : (
-                        'Add to Cart'
-                      )}
-                    </button>
+                        }`}
+                      >
+                        {user?.role === 'ADMIN' ? (
+                          'Admin'
+                        ) : isInCart(product.id) ? (
+                          <>
+                            <Check className="w-4 h-4" />
+                            Added
+                          </>
+                        ) : (
+                          'Add to Cart'
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -292,6 +330,57 @@ export default function ProductListingPage() {
           </div>
         )}
       </main>
+
+      <ProductQuickViewModal
+        open={Boolean(quickViewProduct)}
+        onOpenChange={(open) => {
+          if (!open) setQuickViewProduct(null);
+        }}
+        product={quickViewProduct}
+        onAddToCart={(selection) => {
+          if (!quickViewProduct) return;
+          const selectedVariant = quickViewProduct.groupItems?.find(
+            (item) => item.productId === selection.selectedGroupItemId
+          );
+          const merged: Product = {
+            ...quickViewProduct,
+            price:
+              quickViewProduct.kind === 'group' && quickViewProduct.groupType === 'variant'
+                ? Number(selectedVariant?.price ?? 0)
+                : quickViewProduct.price,
+            selectedGroupItemId: selection.selectedGroupItemId,
+            selectedGroupItemIds: selection.selectedGroupItemIds,
+          };
+          addItem(quickViewProduct.id, selection.quantity, merged, {
+            selectedGroupItemId: selection.selectedGroupItemId,
+            selectedGroupItemIds: selection.selectedGroupItemIds,
+          });
+        }}
+        onBuyNow={(selection) => {
+          if (!quickViewProduct) return;
+          const selectedVariant = quickViewProduct.groupItems?.find(
+            (item) => item.productId === selection.selectedGroupItemId
+          );
+          const merged: Product = {
+            ...quickViewProduct,
+            price:
+              quickViewProduct.kind === 'group' && quickViewProduct.groupType === 'variant'
+                ? Number(selectedVariant?.price ?? 0)
+                : quickViewProduct.price,
+            selectedGroupItemId: selection.selectedGroupItemId,
+            selectedGroupItemIds: selection.selectedGroupItemIds,
+          };
+          navigate('/checkout', {
+            state: {
+              buyNow: {
+                productId: quickViewProduct.id,
+                quantity: selection.quantity,
+                productData: merged,
+              },
+            },
+          });
+        }}
+      />
 
       {/* PC Builder CTA */}
       <section className="px-6 lg:px-12 py-12 border-t border-white/5">

@@ -1,5 +1,6 @@
 export interface Product {
   id: string;
+  kind?: 'product' | 'group';
   name: string;
   category: string;
   price: number;
@@ -11,6 +12,18 @@ export interface Product {
   inStock: boolean;
   /** From API; when missing, catalog treats as ample stock for static items. */
   stockQuantity?: number;
+  groupType?: 'variant' | 'set';
+  groupItems?: Array<{
+    productId: string;
+    qtyPerSet?: number;
+    sortOrder?: number;
+    name?: string;
+    image?: string;
+    description?: string;
+    price?: number;
+  }>;
+  selectedGroupItemId?: string;
+  selectedGroupItemIds?: string[];
 }
 
 export const laptops: Product[] = [

@@ -39,9 +39,14 @@ export function getFirebaseAdmin() {
       if (!projectId) {
         throw new Error('[firebaseAdmin] Service account missing project_id/projectId.');
       }
+      const storageBucket =
+        process.env.FIREBASE_STORAGE_BUCKET ??
+        // For firebase-admin, the bucket name is typically the GCS bucket: <projectId>.appspot.com
+        `${String(projectId)}.appspot.com`;
       admin.initializeApp({
         credential: admin.credential.cert(cred),
         projectId: String(projectId ?? ''),
+        storageBucket,
       });
       // eslint-disable-next-line no-console
       console.log(
@@ -54,9 +59,16 @@ export function getFirebaseAdmin() {
         const trimmed = raw.trim();
         const cred = normalizePrivateKey(JSON.parse(trimmed) as admin.ServiceAccount);
         const projectId = (cred as unknown as Record<string, unknown>).project_id ?? (cred as unknown as Record<string, unknown>).projectId;
+        if (!projectId) {
+          throw new Error('[firebaseAdmin] Service account missing project_id/projectId.');
+        }
+        const storageBucket =
+          process.env.FIREBASE_STORAGE_BUCKET ??
+          `${String(projectId)}.appspot.com`;
         admin.initializeApp({
           credential: admin.credential.cert(cred),
           projectId: String(projectId ?? ''),
+          storageBucket,
         });
         // eslint-disable-next-line no-console
         console.log(
@@ -64,7 +76,8 @@ export function getFirebaseAdmin() {
           String(projectId ?? '')
         );
       } else {
-        admin.initializeApp();
+        const envBucket = process.env.FIREBASE_STORAGE_BUCKET;
+        admin.initializeApp(envBucket ? { storageBucket: envBucket } : undefined);
       }
     }
   }

@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, CreditCard, Truck, ClipboardCheck } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
-import { placeOrderFirebase, createPaymentFirebase } from '../lib/firestoreCheckout';
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { placeOrderDirectFirebase, createPaymentFirebase } from '../lib/firestoreCheckout';
+import type { Product } from '../data/products';
 
 type OnlineChannelId = 'GCASH' | 'MAYA' | 'GOTYME' | 'METROBANK' | 'BDO';
 
@@ -32,10 +32,15 @@ type PlacedLine = {
   name: string;
   quantity: number;
   unitPrice: number;
+  kind?: 'product' | 'group';
+  groupType?: 'variant' | 'set';
+  selectedGroupItemId?: string;
+  selectedGroupItemName?: string;
+  groupItems?: Array<{ productId: string; qtyPerSet?: number }>;
 };
 
 export default function CheckoutPage() {
-  const navigate = useNavigate();
+  const location = useLocation();
   const { items, getProduct, subtotal, clearCart } = useCart();
   const { user } = useAuth();
   const [step, setStep] = useState<'details' | 'place' | 'payment' | 'done'>('details');
@@ -58,7 +63,12 @@ export default function CheckoutPage() {
   const [emailWarning, setEmailWarning] = useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
-  const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
+  const [receiptStoragePath, setReceiptStoragePath] = useState<string | null>(null);
+  const [receiptAttachment, setReceiptAttachment] = useState<{
+    filename: string;
+    contentType: string;
+    dataBase64: string;
+  } | null>(null);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const [bankTransfer, setBankTransfer] = useState({
     accountName: '4RMTECH',
@@ -66,12 +76,37 @@ export default function CheckoutPage() {
     transactionReference: '',
   });
   const [donePaymentFlow, setDonePaymentFlow] = useState<'cod' | 'online' | null>(null);
+  const buyNowItem = (location.state as { buyNow?: { productId: string; quantity?: number; productData?: Product } } | null)
+    ?.buyNow;
+  const buyNowLine = useMemo(() => {
+    if (!buyNowItem?.productId) return null;
+    const quantity = Math.max(1, Number(buyNowItem.quantity ?? 1));
+    const product = buyNowItem.productData ?? getProduct(buyNowItem.productId);
+    if (!product) return null;
+    return {
+      productId: buyNowItem.productId,
+      name: product.name,
+      quantity,
+      unitPrice: product.price,
+      productData: product,
+    };
+  }, [buyNowItem, getProduct]);
 
   const shipping = useMemo(() => (subtotal > 0 ? 99 : 0), [subtotal]);
   const total = useMemo(() => subtotal + shipping, [subtotal, shipping]);
 
   const summaryLines = useMemo(() => {
     if (placedLines.length > 0) return placedLines;
+    if (buyNowLine) {
+      return [
+        {
+          productId: buyNowLine.productId,
+          name: buyNowLine.name,
+          quantity: buyNowLine.quantity,
+          unitPrice: buyNowLine.unitPrice,
+        },
+      ];
+    }
     return items.map((i) => {
       const p = getProduct(i.productId);
       return {
@@ -79,9 +114,14 @@ export default function CheckoutPage() {
         name: p?.name ?? 'Item',
         quantity: i.quantity,
         unitPrice: p?.price ?? 0,
+        kind: p?.kind ?? 'product',
+        groupType: p?.groupType,
+        selectedGroupItemId: i.selectedGroupItemId,
+        selectedGroupItemName: p?.groupItems?.find((it) => it.productId === i.selectedGroupItemId)?.name,
+        groupItems: p?.groupItems?.map((it) => ({ productId: it.productId, qtyPerSet: it.qtyPerSet ?? 1 })),
       };
     });
-  }, [placedLines, items, getProduct]);
+  }, [placedLines, buyNowLine, items, getProduct]);
 
   const summarySubtotal = useMemo(() => {
     if (placedLines.length > 0) {
@@ -153,7 +193,7 @@ export default function CheckoutPage() {
     );
   }
 
-  if (items.length === 0 && !placedOrderId && step !== 'done') {
+  if (step === 'details' && items.length === 0 && !placedOrderId && !buyNowLine) {
     return (
       <div className="min-h-screen">
         <header className="sticky top-0 z-50 bg-[#070A15]/85 backdrop-blur-md border-b border-white/10">
@@ -218,16 +258,40 @@ export default function CheckoutPage() {
 
     if (!user) return;
 
-    const invItems = items.map((i) => ({ productId: i.productId, quantity: i.quantity }));
-    const lineSnapshot: PlacedLine[] = items.map((i) => {
-      const p = getProduct(i.productId);
-      return {
-        productId: i.productId,
-        name: p?.name ?? 'Item',
-        quantity: i.quantity,
-        unitPrice: p?.price ?? 0,
-      };
-    });
+    const sourceLines = buyNowLine
+      ? [
+          {
+            productId: buyNowLine.productId,
+            quantity: buyNowLine.quantity,
+            productData: buyNowLine.productData,
+            selectedGroupItemId: buyNowLine.productData?.selectedGroupItemId,
+          },
+        ]
+      : items.map((i) => ({
+          productId: i.productId,
+          quantity: i.quantity,
+          productData: getProduct(i.productId),
+          selectedGroupItemId: i.selectedGroupItemId,
+        }));
+    const invItems = sourceLines.map((i) => ({
+      productId: i.productId,
+      quantity: i.quantity,
+      kind: i.productData?.kind ?? 'product',
+      groupType: i.productData?.groupType,
+      selectedGroupItemId: i.selectedGroupItemId,
+      groupItems: i.productData?.groupItems?.map((it) => ({ productId: it.productId, qtyPerSet: it.qtyPerSet ?? 1 })),
+    }));
+    const lineSnapshot: PlacedLine[] = sourceLines.map((i) => ({
+      productId: i.productId,
+      name: i.productData?.name ?? 'Item',
+      quantity: i.quantity,
+      unitPrice: i.productData?.price ?? 0,
+      kind: i.productData?.kind ?? 'product',
+      groupType: i.productData?.groupType,
+      selectedGroupItemId: i.selectedGroupItemId,
+      selectedGroupItemName: i.productData?.groupItems?.find((it) => it.productId === i.selectedGroupItemId)?.name,
+      groupItems: i.productData?.groupItems?.map((it) => ({ productId: it.productId, qtyPerSet: it.qtyPerSet ?? 1 })),
+    }));
     const snapSub = lineSnapshot.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
     const snapShip = snapSub > 0 ? 99 : 0;
     const snapGrand = snapSub + snapShip;
@@ -237,21 +301,39 @@ export default function CheckoutPage() {
     try {
       await api.inventory.applyOrder({ items: invItems });
       stockApplied = true;
-      const res = await placeOrderFirebase(user.id, { customer: { name, email, phone, address } }, getProduct);
+      const orderLines = sourceLines.map((line) => ({
+        productId: line.productId,
+        quantity: line.quantity,
+        name: line.productData?.name ?? 'Item',
+        unitPrice: line.productData?.price ?? 0,
+        image: line.productData?.image,
+        kind: line.productData?.kind ?? 'product',
+        groupType: line.productData?.groupType,
+        selectedGroupItemId: line.selectedGroupItemId,
+        selectedGroupItemName:
+          line.productData?.groupItems?.find((it) => it.productId === line.selectedGroupItemId)?.name,
+        groupItems: line.productData?.groupItems?.map((it) => ({
+          productId: it.productId,
+          qtyPerSet: it.qtyPerSet ?? 1,
+        })),
+      }));
+
+      const res = await placeOrderDirectFirebase(user.id, { customer: { name, email, phone, address } }, orderLines);
       const order = res.order;
       setPlacedOrderId(order.id);
       setOrderNumber(order.orderNumber);
       setPlacedLines(lineSnapshot);
       setPlacedTotal(snapGrand);
-      clearCart();
+      setStep('payment');
+      if (!buyNowLine) clearCart();
       setPaymentChoice(null);
       setOnlineChannel(null);
       setReceiptFile(null);
       setReceiptPreviewUrl(null);
-      setReceiptUrl(null);
+      setReceiptStoragePath(null);
+      setReceiptAttachment(null);
       setUploadingReceipt(false);
       setBankTransfer({ accountName: '4RMTECH', accountNumber: '', transactionReference: '' });
-      setStep('payment');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e) {
       if (stockApplied) {
@@ -278,13 +360,23 @@ export default function CheckoutPage() {
     setError('');
     setUploadingReceipt(true);
     try {
-      const storage = getStorage();
-      const safeName = receiptFile.name.replace(/[^\w.-]+/g, '_');
-      const path = `payment-receipts/${user.id}/${placedOrderId}/${Date.now()}-${safeName}`;
-      const r = storageRef(storage, path);
-      await uploadBytes(r, receiptFile);
-      const url = await getDownloadURL(r);
-      setReceiptUrl(url);
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.onload = () => {
+          const result = typeof reader.result === 'string' ? reader.result : '';
+          const commaIdx = result.indexOf(',');
+          resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
+        };
+        reader.readAsDataURL(receiptFile);
+      });
+
+      setReceiptAttachment({
+        filename: receiptFile.name || `receipt-${placedOrderId}`,
+        contentType: receiptFile.type || 'application/octet-stream',
+        dataBase64: base64,
+      });
+      setReceiptStoragePath('memory');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to upload receipt.');
     } finally {
@@ -316,13 +408,9 @@ export default function CheckoutPage() {
         setError('Select a payment channel.');
         return;
       }
-      if (isBankChannel) {
-        if (!receiptUrl) {
-          setError('Upload your bank transfer receipt for verification.');
-          return;
-        }
-        if (!bankTransfer.accountNumber.trim() || !bankTransfer.transactionReference.trim()) {
-          setError('Enter your bank transfer account number and transaction reference.');
+      if (isQrChannel) {
+        if (!receiptAttachment) {
+          setError('Upload your payment receipt for verification.');
           return;
         }
       }
@@ -337,7 +425,7 @@ export default function CheckoutPage() {
         paymentChoice === 'cod' ? 'cod' : 'online',
         user.id,
         paymentChoice === 'online' ? onlineChannel ?? undefined : undefined,
-        paymentChoice === 'online' && isBankChannel ? receiptUrl : undefined
+        paymentChoice === 'online' && isQrChannel ? receiptStoragePath : undefined
       );
       try {
         await api.orders.notifyEmail({
@@ -345,7 +433,8 @@ export default function CheckoutPage() {
           orderNumber,
           paymentFlow: paymentChoice === 'cod' ? 'cod' : 'online',
           onlineChannel: paymentChoice === 'online' ? onlineChannel ?? undefined : undefined,
-          receiptUrl: paymentChoice === 'online' && isBankChannel ? receiptUrl : undefined,
+          receiptStoragePath: null,
+          receiptAttachment: paymentChoice === 'online' && isQrChannel ? receiptAttachment : null,
           bankTransfer: paymentChoice === 'online' && isBankChannel ? bankTransfer : undefined,
           customer: {
             name: form.name.trim(),
@@ -358,8 +447,12 @@ export default function CheckoutPage() {
             name: l.name,
             quantity: l.quantity,
             unitPrice: l.unitPrice,
+            kind: l.kind,
+            groupType: l.groupType,
+            selectedGroupItemId: l.selectedGroupItemId,
+            selectedGroupItemName: l.selectedGroupItemName,
           })),
-        });
+        } as any);
       } catch {
         setEmailWarning(
           paymentChoice === 'online'
@@ -371,7 +464,6 @@ export default function CheckoutPage() {
       setDonePaymentFlow(paymentChoice);
       setStep('done');
       window.scrollTo({ top: 0, behavior: 'smooth' });
-      setTimeout(() => navigate('/'), 2500);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to confirm payment.');
     } finally {
@@ -572,7 +664,7 @@ export default function CheckoutPage() {
                       setOnlineChannel(null);
                       setReceiptFile(null);
                       setReceiptPreviewUrl(null);
-                      setReceiptUrl(null);
+                      setReceiptStoragePath(null);
                       setUploadingReceipt(false);
                       setBankTransfer({ accountName: '4RMTECH', accountNumber: '', transactionReference: '' });
                     }}
@@ -591,7 +683,7 @@ export default function CheckoutPage() {
                       setOnlineChannel(null);
                       setReceiptFile(null);
                       setReceiptPreviewUrl(null);
-                      setReceiptUrl(null);
+                      setReceiptStoragePath(null);
                       setUploadingReceipt(false);
                       setBankTransfer({ accountName: '4RMTECH', accountNumber: '', transactionReference: '' });
                     }}
@@ -617,7 +709,7 @@ export default function CheckoutPage() {
                             setOnlineChannel(ch.id);
                             setReceiptFile(null);
                             setReceiptPreviewUrl(null);
-                            setReceiptUrl(null);
+                            setReceiptStoragePath(null);
                             setUploadingReceipt(false);
                             setBankTransfer({ accountName: '4RMTECH', accountNumber: '', transactionReference: '' });
                           }}
@@ -642,7 +734,8 @@ export default function CheckoutPage() {
                     {isQrChannel ? (
                       <>
                         <p className="text-xs text-[#A8ACB8]">
-                          Scan the QR code below, complete your payment, then submit for verification.
+                          Scan the QR code below, complete your payment, upload your receipt, then submit for
+                          verification.
                         </p>
                         <div className="mx-auto w-full max-w-[260px] aspect-square rounded-2xl bg-white/5 border border-white/20 flex items-center justify-center p-2">
                           {selectedChannel?.qr ? (
@@ -667,11 +760,60 @@ export default function CheckoutPage() {
                             Download QR code
                           </button>
                         ) : null}
+
+                        <div className="space-y-3">
+                          <p className="text-xs text-[#A8ACB8]">
+                            Upload receipt (screenshot or photo). This is required for QR payment verification.
+                          </p>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            title="Upload payment receipt"
+                            aria-label="Upload payment receipt"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0] ?? null;
+                              if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
+                              setReceiptFile(f);
+                              setReceiptStoragePath(null);
+                              setError('');
+                              if (f && f.type.startsWith('image/')) {
+                                setReceiptPreviewUrl(URL.createObjectURL(f));
+                              } else {
+                                setReceiptPreviewUrl(null);
+                              }
+                            }}
+                            className="w-full"
+                          />
+
+                          {receiptPreviewUrl && (
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                              <img
+                                src={receiptPreviewUrl}
+                                alt="Receipt preview"
+                                className="w-full max-h-64 object-contain rounded-xl"
+                              />
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => void uploadReceipt()}
+                            disabled={uploadingReceipt || !receiptFile}
+                            className="w-full px-6 py-3 rounded-full bg-[#FFD700] text-[#070A15] font-semibold hover:bg-[#ffe44d] transition-colors disabled:opacity-60"
+                          >
+                            {uploadingReceipt
+                              ? 'Uploading receipt…'
+                              : receiptStoragePath
+                                ? 'Receipt uploaded'
+                                : 'Upload receipt'}
+                          </button>
+                        </div>
                       </>
                     ) : (
                       <>
                         <p className="text-xs text-[#A8ACB8]">
-                          Bank transfer: enter your transaction reference and upload your receipt for verification.
+                          Bank transfer: no receipt upload is required here. Keep your transfer confirmation for manual
+                          review if requested.
                         </p>
 
                         <div className="space-y-4">
@@ -713,49 +855,6 @@ export default function CheckoutPage() {
                             </div>
                           </div>
 
-                          <div className="space-y-3">
-                            <p className="text-xs text-[#A8ACB8]">
-                              Upload receipt (screenshot or photo). This is required for bank transfer verification.
-                            </p>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              title="Upload transfer receipt"
-                              aria-label="Upload transfer receipt"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0] ?? null;
-                                if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
-                                setReceiptFile(f);
-                                setReceiptUrl(null);
-                                setError('');
-                                if (f && f.type.startsWith('image/')) {
-                                  setReceiptPreviewUrl(URL.createObjectURL(f));
-                                } else {
-                                  setReceiptPreviewUrl(null);
-                                }
-                              }}
-                              className="w-full"
-                            />
-
-                            {receiptPreviewUrl && (
-                              <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                                <img
-                                  src={receiptPreviewUrl}
-                                  alt="Receipt preview"
-                                  className="w-full max-h-64 object-contain rounded-xl"
-                                />
-                              </div>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() => void uploadReceipt()}
-                              disabled={uploadingReceipt || !receiptFile}
-                              className="w-full px-6 py-3 rounded-full bg-[#FFD700] text-[#070A15] font-semibold hover:bg-[#ffe44d] transition-colors disabled:opacity-60"
-                            >
-                              {uploadingReceipt ? 'Uploading receipt…' : receiptUrl ? 'Receipt uploaded' : 'Upload receipt'}
-                            </button>
-                          </div>
                         </div>
                       </>
                     )}
@@ -779,10 +878,7 @@ export default function CheckoutPage() {
                     !paymentChoice ||
                     (paymentChoice === 'online' &&
                       (!onlineChannel ||
-                        (isBankChannel &&
-                          (!receiptUrl ||
-                            !bankTransfer.accountNumber.trim() ||
-                            !bankTransfer.transactionReference.trim()))))
+                        (isQrChannel && !receiptStoragePath)))
                   }
                   className="w-full px-8 py-4 rounded-full bg-[#FFD700] text-[#070A15] font-semibold hover:bg-[#ffe44d] transition-colors disabled:opacity-50"
                 >

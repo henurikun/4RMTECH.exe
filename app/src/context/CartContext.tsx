@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { toast } from 'sonner';
 import { allProducts, type Product } from '../data/products';
@@ -23,7 +23,12 @@ const GUEST_STORAGE_KEY = '4rmtech_cart_guest';
 
 interface CartContextValue {
   items: CartItem[];
-  addItem: (productId: string, quantity?: number, productData?: Product) => void;
+  addItem: (
+    productId: string,
+    quantity?: number,
+    productData?: Product,
+    selection?: { selectedGroupItemId?: string; selectedGroupItemIds?: string[] }
+  ) => void;
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   getProduct: (id: string) => Product | undefined;
@@ -58,6 +63,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const isAdminShopper = user?.role === 'ADMIN';
   const { products: catalogProducts } = useCatalog();
   const [items, setItems] = useState<CartItem[]>(() => loadGuestCart());
+  const optimisticAddedRef = useRef<Map<string, { item: CartItem; ts: number }>>(new Map());
+  const hasReceivedSnapshotRef = useRef(false);
+  const OPTIMISTIC_TTL_MS = 30000; // keep optimistic items during transient auth/Firestore empty snapshots
 
   const resolveLocalProduct = useCallback((id: string): Product | undefined => {
     let p = catalogProducts.find((x) => x.id === id);
@@ -94,6 +102,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!user) {
+      // Don't wipe cart while Firebase Auth is still present but the API user object is momentarily missing.
+      // This prevents "cart cleared a few seconds after adding" during auth/session refresh.
+      if (auth.currentUser) return;
       setItems(loadGuestCart());
       return;
     }
@@ -103,13 +114,57 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       unsubCart?.();
       unsubCart = undefined;
       if (!fbUser || fbUser.uid !== user.id) {
-        setItems([]);
+        // Avoid clearing cart during transient auth refresh states.
         return;
       }
       unsubCart = subscribeCartItems(
         user.id,
-        (next) => setItems(next),
-        () => setItems([])
+        (next) => {
+          const now = Date.now();
+          const optimisticById = optimisticAddedRef.current;
+
+          // Remove expired optimistic entries.
+          optimisticById.forEach((v, pid) => {
+            if (now - v.ts > OPTIMISTIC_TTL_MS) optimisticById.delete(pid);
+          });
+
+          setItems((prev) => {
+            // After we've loaded at least once from Firestore, treat an empty snapshot as a likely transient state.
+            // This prevents the cart from clearing in the next couple seconds while auth/session refresh completes.
+            if (
+              next.length === 0 &&
+              hasReceivedSnapshotRef.current &&
+              prev.length > 0 &&
+              optimisticById.size > 0
+            ) {
+              const prevById = new Set(prev.map((i) => i.productId));
+              const mergedFromPrev = [...prev];
+              optimisticById.forEach((v, pid) => {
+                if (prevById.has(pid)) optimisticById.delete(pid);
+                else mergedFromPrev.push(v.item);
+              });
+              return mergedFromPrev;
+            }
+
+            hasReceivedSnapshotRef.current = true;
+
+            const merged: CartItem[] = [...next];
+            const mergedById = new Map(merged.map((i) => [i.productId, i] as const));
+
+            // If Firestore snapshot doesn't include an item we optimistically added, re-inject it.
+            // If the snapshot includes it, we trust Firestore and drop the optimistic entry.
+            optimisticById.forEach((v, pid) => {
+              if (mergedById.has(pid)) {
+                optimisticById.delete(pid);
+                return;
+              }
+              merged.push(v.item);
+            });
+
+            return merged;
+          });
+        },
+        () => {}
       );
     });
 
@@ -120,7 +175,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   const addItem = useCallback(
-    (productId: string, quantity = 1, productData?: Product) => {
+    (
+      productId: string,
+      quantity = 1,
+      productData?: Product,
+      selection?: { selectedGroupItemId?: string; selectedGroupItemIds?: string[] }
+    ) => {
       if (isAdminShopper) {
         toast.error('Administrator accounts cannot add items to the cart.');
         return;
@@ -154,22 +214,43 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Optimistic UI update: update cart immediately so UI doesn't wait for Firestore snapshot.
+        const optimisticItem: CartItem = {
+          productId,
+          quantity: addQty,
+          productData: resolved,
+          selectedGroupItemId: selection?.selectedGroupItemId,
+          selectedGroupItemIds: selection?.selectedGroupItemIds,
+        };
+        optimisticAddedRef.current.set(productId, { item: optimisticItem, ts: Date.now() });
         setItems((prev) => {
           if (prev.some((i) => i.productId === productId)) return prev;
-          return [...prev, { productId, quantity: addQty, productData: resolved }];
+          return [
+            ...prev,
+            optimisticItem,
+          ];
         });
 
         void (async () => {
           const ok = await ensureFirebaseUidMatchesApiUser(user.id);
           if (!ok) {
+            optimisticAddedRef.current.delete(productId);
             setItems((prev) => prev.filter((i) => i.productId !== productId));
+            toast.error('Cart sync not ready yet. Please try again.');
             return;
           }
           try {
-            await fsAddCartItem(user.id, productId, addQty, resolved);
-          } catch {
-            // Roll back optimistic update if Firestore write fails.
+            await fsAddCartItem(user.id, productId, addQty, resolved, selection);
+          } catch (e) {
+            optimisticAddedRef.current.delete(productId);
             setItems((prev) => prev.filter((i) => i.productId !== productId));
+            // Bubble up the real Firestore error (permission, invalid doc id, offline, etc.)
+            // eslint-disable-next-line no-console
+            console.error('[cart] addCartItem failed', e);
+            const msg =
+              e && typeof e === 'object' && 'message' in e && typeof (e as any).message === 'string'
+                ? String((e as any).message)
+                : 'Please try again.';
+            toast.error(`Failed to add item to cart. ${msg}`);
           }
         })();
         return;
@@ -193,7 +274,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             description: `Added ${addQty} instead of ${quantity}.`,
           });
         }
-        const next: CartItem[] = [...prev, { productId, quantity: addQty, productData: resolved }];
+        const next: CartItem[] = [
+          ...prev,
+          {
+            productId,
+            quantity: addQty,
+            productData: resolved,
+            selectedGroupItemId: selection?.selectedGroupItemId,
+            selectedGroupItemIds: selection?.selectedGroupItemIds,
+          },
+        ];
         saveGuestCart(next);
         return next;
       });
@@ -204,13 +294,25 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const removeItem = useCallback(
     (productId: string) => {
       if (user) {
+        const removedItem = items.find((i) => i.productId === productId);
+        if (!removedItem) return;
+
+        // Optimistic UI removal; rollback if Firestore remove fails.
+        optimisticAddedRef.current.delete(productId);
+        setItems((prev) => prev.filter((i) => i.productId !== productId));
+
         void (async () => {
           const ok = await ensureFirebaseUidMatchesApiUser(user.id);
-          if (!ok) return;
+          if (!ok) {
+            setItems((prev) => (prev.some((i) => i.productId === productId) ? prev : [...prev, removedItem]));
+            toast.error('Cart sync not ready yet. Please try again.');
+            return;
+          }
           try {
             await fsRemoveCartItem(user.id, productId);
           } catch {
-            // ignore
+            setItems((prev) => (prev.some((i) => i.productId === productId) ? prev : [...prev, removedItem]));
+            toast.error('Failed to remove item from cart. Please try again.');
           }
         })();
         return;
@@ -222,7 +324,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
     },
-    [user]
+    [items, user]
   );
 
   const updateQuantity = useCallback(

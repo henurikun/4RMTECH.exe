@@ -3,6 +3,7 @@ import type { Product } from '../data/products';
 /** Shape returned by GET /api/products (Firestore-backed API). */
 export type ApiProductRow = {
   id: string;
+  kind?: 'product' | 'group';
   sku: string | null;
   name: string;
   description: string;
@@ -15,6 +16,16 @@ export type ApiProductRow = {
   stockQuantity?: number;
   badge?: string | null;
   specs?: Record<string, unknown> | null;
+  groupType?: 'variant' | 'set' | null;
+  groupItems?: Array<{
+    productId: string;
+    qtyPerSet?: number;
+    sortOrder?: number;
+    name?: string;
+    image?: string;
+    description?: string;
+    price?: number;
+  }>;
 };
 
 export function mapApiProductToProduct(row: ApiProductRow): Product {
@@ -28,6 +39,7 @@ export function mapApiProductToProduct(row: ApiProductRow): Product {
 
   return {
     id: row.id,
+    kind: row.kind ?? 'product',
     name: row.name,
     category: row.category,
     price: Math.round(row.priceCents) / 100,
@@ -39,5 +51,7 @@ export function mapApiProductToProduct(row: ApiProductRow): Product {
     badge: row.badge ?? undefined,
     inStock: row.inStock,
     stockQuantity: row.stockQuantity ?? 0,
+    groupType: row.groupType ?? undefined,
+    groupItems: row.groupItems ?? undefined,
   };
 }

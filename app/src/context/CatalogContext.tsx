@@ -29,10 +29,30 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const rows = await api.products.list();
+      const [rows, groups] = await Promise.all([api.products.list(), api.products.groups().catch(() => [])]);
       const mapped = rows.map((r) => mapApiProductToProduct(r));
+      const mappedGroups = groups.map((g) =>
+        mapApiProductToProduct({
+          id: g.id,
+          kind: 'group',
+          sku: null,
+          name: g.name,
+          description: g.description,
+          category: g.category,
+          imageUrl: g.imageUrl,
+          priceCents: g.priceCents,
+          originalPriceCents: g.originalPriceCents,
+          currency: g.currency,
+          inStock: g.inStock,
+          stockQuantity: g.stockQuantity,
+          badge: g.badge,
+          specs: {},
+          groupType: g.groupType,
+          groupItems: g.groupItems,
+        })
+      );
       // If the API returns an empty list, treat it as "no inventory" (do not fall back to demo data).
-      setRemote(mapped);
+      setRemote([...mapped, ...mappedGroups]);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load catalog');
       // Avoid repopulating the UI with demo data if the API fails (e.g., after clearing).
