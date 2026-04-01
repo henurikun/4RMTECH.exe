@@ -48,7 +48,10 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
           badge: g.badge,
           specs: {},
           groupType: g.groupType,
-          groupItems: g.groupItems,
+          groupItems: g.groupItems?.map((item) => ({
+            ...item,
+            image: item.image ?? undefined,
+          })),
         })
       );
       // If the API returns an empty list, treat it as "no inventory" (do not fall back to demo data).

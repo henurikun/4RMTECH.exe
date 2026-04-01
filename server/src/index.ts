@@ -10,7 +10,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173',
+    origin: process.env.FRONTEND_ORIGIN ?? 'https://4rmtech-68ce4.web.app',
     credentials: false,
   })
 );

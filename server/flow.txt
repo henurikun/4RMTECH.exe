@@ -35,6 +35,5 @@ Firestore -> Nodejs -> Frontend
         The Action: It throws away the old "Printed Catalog" and prints a fresh one from the Warehouse.
         The Result: Any manual changes you made (price updates, new items) are now live.
         Cost: 2,300 reads (Happens only once per day).
-
-
+        
 checkout function code should update both the RAM and Firestore at the same time

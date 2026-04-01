@@ -19,7 +19,7 @@ export default function ProductQuickViewModal({ open, product, onOpenChange, onA
   const [selectedVariantId, setSelectedVariantId] = useState('');
 
   const isGroup = product?.kind === 'group';
-  const isVariant = product?.groupType === 'variant';
+  const isVariant = isGroup && product?.groupType === 'variant';
   const members = product?.groupItems ?? [];
 
   const images = useMemo(() => {
